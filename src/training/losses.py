@@ -261,7 +261,7 @@ class StructuralLoss(nn.Module):
         # Use polynomial approximation for matrix exponential
         A = adjacency_matrix
         powers = [torch.eye(d, device=A.device)]
-        trace_sum = float(d)  # tr(I)
+        trace_sum = torch.tensor(float(d), device=A.device)  # tr(I) as tensor
 
         # Compute first few terms of exp(A)
         for i in range(1, 10):
@@ -269,7 +269,8 @@ class StructuralLoss(nn.Module):
             trace_sum += torch.trace(powers[-1])
 
         # DAG constraint: tr(exp(A)) = d
-        dag_constraint = torch.abs(trace_sum - d)
+        target_trace = torch.tensor(float(d), device=A.device)
+        dag_constraint = torch.abs(trace_sum - target_trace)
 
         return dag_constraint
 
@@ -299,24 +300,29 @@ class BiologicalConsistencyLoss(nn.Module):
             predicted_effects: Predicted perturbation effects [B, D]
             pathway_effects: Known pathway effects [B, D]
         """
-        total_loss = 0.0
+        total_loss = torch.tensor(0.0, device=predicted_graph.device)
 
         # Pathway structure consistency
         if self.pathway_graph is not None:
             structure_loss = self._pathway_structure_loss(predicted_graph)
-            total_loss += self.lambda_pathway * structure_loss
+            total_loss = total_loss + self.lambda_pathway * structure_loss
 
         # Pathway effect consistency
         if pathway_effects is not None:
             effect_loss = self._pathway_effect_loss(predicted_effects, pathway_effects)
-            total_loss += effect_loss
+            total_loss = total_loss + effect_loss
 
         return total_loss
 
     def _pathway_structure_loss(self, predicted_graph: torch.Tensor) -> torch.Tensor:
         """Encourage consistency with known pathway structure."""
         # MSE between predicted and known pathway connections
-        return F.mse_loss(predicted_graph, self.pathway_adjacency)
+        pathway_adj = getattr(self, 'pathway_adjacency', None)
+        if pathway_adj is not None and isinstance(pathway_adj, torch.Tensor):
+            return F.mse_loss(predicted_graph, pathway_adj)
+        else:
+            # Fallback if pathway adjacency is not available
+            return torch.tensor(0.0, device=predicted_graph.device)
 
     def _pathway_effect_loss(
         self, predicted_effects: torch.Tensor, pathway_effects: torch.Tensor

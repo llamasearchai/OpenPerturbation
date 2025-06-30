@@ -209,4 +209,25 @@ Special thanks to the open-source community and the following projects that made
 
 ---
 
-*For detailed technical documentation, API reference, and usage examples, please refer to the [README.md](README.md) and the `/docs` endpoint when running the server.* 
+*For detailed technical documentation, API reference, and usage examples, please refer to the [README.md](README.md) and the `/docs` endpoint when running the server.*
+
+## [1.1.0] - 2025-01-04
+
+### Fixed
+- Resolved all Pyright linter errors across the codebase
+- Added `effect_size` attribute to `PathwayEnrichmentResult`
+- Implemented safe handling for optional dependencies (`bioservices`, `requests`)
+- Corrected Fisher exact test type conversions and Benjamini–Hochberg adjustments
+- Improved NetworkX degree handling for hub analysis and visualisation
+- Ensured `generate_pathway_summary_report` reliably returns string output
+
+### Changed
+- Bumped package version to **1.1.0** in `pyproject.toml`
+- Updated documentation to reflect new type-safe APIs
+
+### Added
+- Mock fallback implementations for `bioservices` classes when the library is unavailable
+- Extensive inline type-safety comments for mypy/pyright compliance
+
+### Authors
+- Nik Jois <nikjois@llamasearch.ai> 

@@ -5,6 +5,7 @@ Author: Nik Jois
 Email: nikjois@llamasearch.ai
 """
 
+import json
 import logging
 import numpy as np
 import pandas as pd
@@ -12,6 +13,131 @@ from typing import Dict, List, Any, Optional, Union
 import torch
 
 logger = logging.getLogger(__name__)
+
+
+class AgentTools:
+    """Static utility tools for AI agents."""
+    
+    @staticmethod
+    def format_data_for_ai(data: Dict[str, Any]) -> str:
+        """Format experimental data for AI consumption."""
+        if isinstance(data, dict):
+            formatted_lines = []
+            for key, value in data.items():
+                if isinstance(value, (int, float)):
+                    if 'viability' in key.lower() or 'percent' in key.lower():
+                        formatted_lines.append(f"{key}: {value * 100:.1f}%")
+                    else:
+                        formatted_lines.append(f"{key}: {value}")
+                elif isinstance(value, list):
+                    if len(value) <= 5:
+                        formatted_lines.append(f"{key}: {value}")
+                    else:
+                        formatted_lines.append(f"{key}: {len(value)} values (range: {min(value):.3f} - {max(value):.3f})")
+                else:
+                    formatted_lines.append(f"{key}: {str(value)}")
+            return "\n".join(formatted_lines)
+        else:
+            return str(data)
+    
+    @staticmethod
+    def parse_ai_response(response: str) -> Dict[str, Any]:
+        """Parse AI response, attempting JSON first, then fallback."""
+        response = response.strip()
+        
+        # Try to extract JSON from response
+        try:
+            # Look for JSON blocks
+            if '{' in response and '}' in response:
+                start = response.find('{')
+                end = response.rfind('}') + 1
+                json_str = response[start:end]
+                return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+        
+        # Try parsing the entire response as JSON
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            pass
+        
+        # Fallback: create structured response
+        return {
+            "analysis": response,
+            "confidence": 0.7,
+            "recommendations": [],
+            "parsed": False
+        }
+    
+    @staticmethod
+    def build_analysis_prompt(data: Dict[str, Any], context: Optional[Dict[str, Any]] = None, query: Optional[str] = None) -> str:
+        """Build analysis prompt for AI."""
+        formatted_data = AgentTools.format_data_for_ai(data)
+        
+        prompt = f"""
+        Analyze the following perturbation biology data:
+        
+        Data:
+        {formatted_data}
+        """
+        
+        if context:
+            prompt += f"\nContext: {json.dumps(context, indent=2)}"
+        
+        if query:
+            prompt += f"\nSpecific Question: {query}"
+        
+        prompt += """
+        
+        Please provide:
+        1. Key biological insights
+        2. Statistical interpretation
+        3. Potential mechanisms
+        4. Follow-up recommendations
+        5. Confidence assessment (0.0-1.0)
+        
+        Format as JSON when possible.
+        """
+        
+        return prompt
+    
+    @staticmethod
+    def validate_experiment_design(experiment: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate experimental design parameters."""
+        errors = []
+        warnings = []
+        
+        # Check required fields
+        required_fields = ['type']
+        for field in required_fields:
+            if field not in experiment:
+                errors.append(f"Missing required field: {field}")
+        
+        # Validate experiment type
+        valid_types = ['dose_response', 'time_course', 'compound_screening', 'genetic_perturbation']
+        if 'type' in experiment and experiment['type'] not in valid_types:
+            errors.append(f"Invalid experiment type: {experiment['type']}")
+        
+        # Validate concentrations if present
+        if 'concentrations' in experiment:
+            concs = experiment['concentrations']
+            if not isinstance(concs, list) or len(concs) == 0:
+                errors.append("Concentrations must be a non-empty list")
+            elif any(c < 0 for c in concs if isinstance(c, (int, float))):
+                errors.append("Concentrations must be non-negative")
+        
+        # Validate timepoints
+        if 'timepoints' in experiment:
+            timepoints = experiment['timepoints']
+            if not isinstance(timepoints, list) or len(timepoints) == 0:
+                warnings.append("No timepoints specified")
+        
+        return {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings
+        }
 
 
 class PerturbationAnalysisTools:
@@ -28,11 +154,15 @@ class PerturbationAnalysisTools:
         else:
             data_array = data
             
+        # Safe shape access
+        num_samples = data_array.size if data_array.ndim == 1 else data_array.shape[0]
+        num_genes = 1 if data_array.ndim == 1 else data_array.shape[1]
+        
         return {
             'mean_expression': float(np.mean(data_array)),
             'std_expression': float(np.std(data_array)),
-            'num_genes': data_array.shape[1] if len(data_array.shape) > 1 else 1,
-            'num_samples': data_array.shape[0],
+            'num_genes': num_genes,
+            'num_samples': num_samples,
             'expression_range': [float(np.min(data_array)), float(np.max(data_array))]
         }
     
@@ -109,12 +239,25 @@ class PerturbationAnalysisTools:
     def analyze_cellular_morphology(self, image_features: np.ndarray) -> Dict[str, Any]:
         """Analyze cellular morphology features."""
         
+        # Safe array indexing with shape checking
+        mean_area = 0.0
+        mean_perimeter = 0.0
+        
+        if len(image_features.shape) >= 2 and image_features.shape[1] > 0:
+            mean_area = float(np.mean(image_features[:, 0]))
+            if image_features.shape[1] > 1:
+                mean_perimeter = float(np.mean(image_features[:, 1]))
+        
+        # Safe shape access for num_cells
+        num_cells = image_features.shape[0] if len(image_features.shape) > 0 else 0
+        feature_dimensions = image_features.shape[1] if len(image_features.shape) >= 2 else 0
+        
         return {
-            'mean_cell_area': float(np.mean(image_features[:, 0]) if image_features.shape[1] > 0 else 0),
-            'mean_cell_perimeter': float(np.mean(image_features[:, 1]) if image_features.shape[1] > 1 else 0),
+            'mean_cell_area': mean_area,
+            'mean_cell_perimeter': mean_perimeter,
             'morphology_diversity': float(np.std(image_features.flatten())),
-            'num_cells': image_features.shape[0],
-            'feature_dimensions': image_features.shape[1]
+            'num_cells': num_cells,
+            'feature_dimensions': feature_dimensions
         }
     
     def generate_experimental_recommendations(self, analysis_results: Dict[str, Any]) -> List[str]:

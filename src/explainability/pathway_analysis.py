@@ -36,9 +36,29 @@ from plotly.subplots import make_subplots
 # Biological databases
 try:
     import requests
-    from bioservices import KEGG, Reactome, UniProt
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    warnings.warn("requests not available. External pathway features will be limited.")
+
+try:
+    from bioservices import KEGG, Reactome, UniProt, PathwayCommons, PathwayCommonsClient  # type: ignore
     BIOSERVICES_AVAILABLE = True
 except ImportError:
+    # Create mock classes if bioservices is not available
+    class KEGG:
+        def pathwayIds(self, organism='hsa'): return []
+        def parse(self, data): return {}
+        def get(self, pathway_id): return ""
+    
+    class Reactome:
+        def content_query(self, organism, content_type): return []
+        def participants(self, pathway_id): return []
+    
+    class UniProt: pass
+    class PathwayCommons: pass
+    class PathwayCommonsClient: pass
+    
     BIOSERVICES_AVAILABLE = False
     warnings.warn("bioservices not available. Some pathway features will be limited.")
 
@@ -59,6 +79,7 @@ class PathwayEnrichmentResult:
     adjusted_p_value: float
     odds_ratio: float
     enrichment_score: float
+    effect_size: float = 0.0  # Add missing effect_size attribute
     
     def to_dict(self) -> Dict:
         """Convert to dictionary."""
@@ -470,15 +491,18 @@ class PathwayEnrichmentAnalyzer:
                           pathway_size: int, 
                           background_size: int) -> Tuple[float, float]:
         """Perform Fisher's exact test."""
-        # Contingency table
+        # Create contingency table
         a = overlap
         b = query_size - overlap
         c = pathway_size - overlap
         d = background_size - pathway_size - query_size + overlap
         
-        odds_ratio, p_value = fisher_exact([[a, b], [c, d]], alternative='greater')
+        # Unpack the tuple properly to avoid type issues
+        result = fisher_exact([[a, b], [c, d]], alternative='greater')
+        odds_ratio = float(result[0])  # type: ignore
+        p_value = float(result[1])  # type: ignore
         
-        return float(p_value), float(odds_ratio)
+        return p_value, odds_ratio
     
     def _benjamini_hochberg_correction(self, p_values: List[float]) -> List[float]:
         """Apply Benjamini-Hochberg correction for multiple testing."""
@@ -490,19 +514,19 @@ class PathwayEnrichmentAnalyzer:
         sorted_indices = sorted(range(n), key=lambda i: p_values[i])
         sorted_p_values = [p_values[i] for i in sorted_indices]
         
-        # Apply correction
-        adjusted_p_values = [0] * n
+        # Apply correction - use float list explicitly
+        adjusted_p_values: List[float] = [0.0] * n
         for i in range(n - 1, -1, -1):
             rank = i + 1
             bh_value = sorted_p_values[i] * n / rank
             
             if i == n - 1:
-                adjusted_p_values[i] = min(bh_value, 1.0)
+                adjusted_p_values[i] = float(min(bh_value, 1.0))
             else:
-                adjusted_p_values[i] = min(bh_value, adjusted_p_values[i + 1])
+                adjusted_p_values[i] = float(min(bh_value, adjusted_p_values[i + 1]))
         
         # Restore original order
-        result = [0] * n
+        result: List[float] = [0.0] * n
         for i, original_idx in enumerate(sorted_indices):
             result[original_idx] = adjusted_p_values[i]
         
@@ -766,31 +790,46 @@ class NetworkAnalyzer:
         return dict(grouped)
     
     def find_network_hubs(self, G: nx.Graph, top_k: int = 10) -> List[Tuple[str, float]]:
-        """Find network hub genes based on centrality."""
-        try:
-            # Combine multiple centrality measures
-            degree_cent = nx.degree_centrality(G)
-            betweenness_cent = nx.betweenness_centrality(G)
-            closeness_cent = nx.closeness_centrality(G)
-            
-            # Combined hub score
-            hub_scores = {}
-            for node in G.nodes():
-                hub_scores[node] = (
-                    degree_cent.get(node, 0) * 0.4 +
-                    betweenness_cent.get(node, 0) * 0.4 +
-                    closeness_cent.get(node, 0) * 0.2
-                )
-            
-            # Return top hubs
-            top_hubs = sorted(hub_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
-            
-            logger.info(f"Identified {len(top_hubs)} network hubs")
-            return top_hubs
-            
-        except Exception as e:
-            logger.error(f"Hub detection failed: {str(e)}")
+        """Find network hub genes based on centrality measures."""
+        if G.number_of_nodes() == 0:
             return []
+        
+        # Compute multiple centrality measures
+        degree_centrality = nx.degree_centrality(G)
+        betweenness_centrality = nx.betweenness_centrality(G)
+        closeness_centrality = nx.closeness_centrality(G)
+        eigenvector_centrality = {}
+        
+        try:
+            eigenvector_centrality = nx.eigenvector_centrality(G, max_iter=1000)
+        except:
+            # Fallback if eigenvector centrality fails
+            eigenvector_centrality = {node: 0.0 for node in G.nodes()}
+        
+        # Combine centrality scores
+        combined_scores = {}
+        for node in G.nodes():
+            combined_scores[node] = (
+                degree_centrality.get(node, 0) +
+                betweenness_centrality.get(node, 0) +
+                closeness_centrality.get(node, 0) +
+                eigenvector_centrality.get(node, 0)
+            ) / 4
+        
+        # Safe handling of degree values - convert to plain int
+        node_degrees = []
+        for node in G.nodes():
+            degree_val = G.degree(node)
+            # NetworkX degree returns int, but type checker sees DiDegreeView
+            node_degrees.append(int(degree_val))  # type: ignore
+        
+        max_degree = max(node_degrees) if node_degrees else 1
+        avg_degree = float(sum(node_degrees) / len(node_degrees)) if node_degrees else 0.0
+        
+        # Sort by combined score
+        hub_genes = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+        
+        return hub_genes[:top_k]
     
     def analyze_pathway_crosstalk(self, pathway_ids: List[str]) -> Dict[str, Any]:
         """Analyze crosstalk between pathways."""
@@ -947,10 +986,10 @@ class PathwayVisualizer:
             node_colors = 'lightblue'
             colorscale = None
         
-        # Node sizes based on degree
-        node_degrees = [G.degree(node) for node in G.nodes()]
+        # Node sizes based on degree - convert to int to avoid DiDegreeView issues
+        node_degrees = [int(G.degree(node)) for node in G.nodes()]  # type: ignore
         max_degree = max(node_degrees) if node_degrees else 1
-        node_sizes = [10 + (degree / max_degree) * 20 for degree in node_degrees]
+        node_sizes = [10 + (float(degree) / float(max_degree)) * 20 for degree in node_degrees]
         
         # Highlight hub genes
         if hub_genes:
@@ -1446,6 +1485,19 @@ def generate_pathway_summary_report(enrichment_results: List[PathwayEnrichmentRe
             "2. **Design targeted experiments** based on pathway predictions",
             "3. **Monitor key biomarkers** identified in the analysis"
         ])
+    
+    # Compile report content
+    report_content = '\n'.join(report_lines)
+    
+    # Save report to file
+    try:
+        with open(output_file, 'w') as f:
+            f.write(report_content)
+        logger.info(f"Pathway summary report saved to {output_file}")
+    except Exception as e:
+        logger.warning(f"Could not save report to {output_file}: {str(e)}")
+    
+    return report_content  # Always return the report content as string
 
 def fetch_kegg_pathways(gene_list: List[str]) -> Dict[str, Any]:
     BASE_URL = "http://rest.kegg.jp"

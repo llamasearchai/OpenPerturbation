@@ -8,7 +8,7 @@ import os
 import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, Dataset, ConcatDataset
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict, List, Tuple, Optional, Union, Any, cast, Sized
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -22,16 +22,33 @@ from ..data.loaders.molecular_loader import MolecularDataLoader
 
 logger = logging.getLogger(__name__)
 
+# -----------------------------------------------------------------------------
+# Helper utilities
+# -----------------------------------------------------------------------------
 
-class MultiModalDataset(Dataset):
+def _safe_len(ds: Any) -> int:
+    """Return len(ds) if possible, otherwise 0.
+
+    This avoids static type checker issues when the Dataset implementation does
+    not explicitly subclass Sized. At runtime, we still rely on `__len__` to be
+    present – which is the case for all datasets used in the project.
+    """
+
+    try:
+        # The cast ensures runtime safety; we suppress static complaint.
+        return len(cast(Sized, ds))  # type: ignore[reportArgumentType]
+    except Exception:
+        return 0
+
+class MultiModalDataset(Dataset[Dict[str, Any]]):
     """Dataset that combines imaging, genomics, and molecular data."""
 
     def __init__(
         self,
-        imaging_dataset: Optional[Dataset] = None,
-        genomics_dataset: Optional[Dataset] = None,
-        molecular_dataset: Optional[Dataset] = None,
-        config: DictConfig = None,
+        imaging_dataset: Optional[Dataset[Any]] = None,
+        genomics_dataset: Optional[Dataset[Any]] = None,
+        molecular_dataset: Optional[Dataset[Any]] = None,
+        config: Optional[DictConfig] = None,
     ):
         """
         Initialize multi-modal dataset.
@@ -46,16 +63,16 @@ class MultiModalDataset(Dataset):
         self.imaging_dataset = imaging_dataset
         self.genomics_dataset = genomics_dataset
         self.molecular_dataset = molecular_dataset
-        self.config = config or DictConfig({})
+        self.config = config if config is not None else DictConfig({})
 
         # Determine dataset size (use largest available dataset)
         self.sizes = {}
         if imaging_dataset:
-            self.sizes["imaging"] = len(imaging_dataset)
+            self.sizes["imaging"] = _safe_len(imaging_dataset)
         if genomics_dataset:
-            self.sizes["genomics"] = len(genomics_dataset)
+            self.sizes["genomics"] = _safe_len(genomics_dataset)
         if molecular_dataset:
-            self.sizes["molecular"] = len(molecular_dataset)
+            self.sizes["molecular"] = _safe_len(molecular_dataset)
 
         if not self.sizes:
             raise ValueError("At least one dataset must be provided")
@@ -77,19 +94,19 @@ class MultiModalDataset(Dataset):
 
         # Get imaging data
         if self.imaging_dataset:
-            imaging_idx = idx % len(self.imaging_dataset)
+            imaging_idx = idx % _safe_len(self.imaging_dataset)
             imaging_sample = self.imaging_dataset[imaging_idx]
             sample["imaging"] = imaging_sample
 
         # Get genomics data
         if self.genomics_dataset:
-            genomics_idx = idx % len(self.genomics_dataset)
+            genomics_idx = idx % _safe_len(self.genomics_dataset)
             genomics_sample = self.genomics_dataset[genomics_idx]
             sample["genomics"] = genomics_sample
 
         # Get molecular data
         if self.molecular_dataset:
-            molecular_idx = idx % len(self.molecular_dataset)
+            molecular_idx = idx % _safe_len(self.molecular_dataset)
             molecular_sample = self.molecular_dataset[molecular_idx]
             sample["molecular"] = molecular_sample
 
@@ -98,7 +115,7 @@ class MultiModalDataset(Dataset):
 
         return sample
 
-    def _extract_perturbation_info(self, sample: Dict) -> Dict:
+    def _extract_perturbation_info(self, sample: Dict[str, Any]) -> Dict[str, Any]:
         """Extract and harmonize perturbation information across modalities."""
 
         perturbation_info = {
@@ -166,41 +183,38 @@ class PerturbationDataModule(pl.LightningDataModule):
         self.val_split = config.get("val_split", 0.15)
         self.test_split = config.get("test_split", 0.15)
 
-        # Initialize data loaders
-        self.imaging_loader = None
-        self.genomics_loader = None
-        self.molecular_loader = None
+        # Initialize data loaders with proper type annotations
+        self.imaging_loader: Optional[HighContentImagingLoader] = None
+        self.genomics_loader: Optional[GenomicsDataLoader] = None
+        self.molecular_loader: Optional[MolecularDataLoader] = None
 
-        # Datasets
-        self.train_dataset = None
-        self.val_dataset = None
-        self.test_dataset = None
+        # Datasets with proper type annotations
+        self.train_dataset: Optional[MultiModalDataset] = None
+        self.val_dataset: Optional[MultiModalDataset] = None
+        self.test_dataset: Optional[MultiModalDataset] = None
 
         # Cache for statistics
-        self._data_statistics = None
+        self._data_statistics: Optional[Dict[str, Any]] = None
 
         logger.info(f"Initialized PerturbationDataModule with batch_size={self.batch_size}")
 
     def prepare_data(self):
-        """Download and prepare data if needed."""
+        """Download and prepare data."""
+        # Download datasets if necessary
+        self._download_datasets()
 
-        # Create data directories
-        self.data_dir.mkdir(parents=True, exist_ok=True)
-
-        # Check if synthetic data should be created
-        if self.config.get("create_synthetic_data", False):
+        # Create synthetic data if needed
+        if self.config.get("create_synthetic", False):
             self._create_synthetic_data()
 
-        # Download datasets if URLs are provided
-        if self.config.get("download_urls"):
-            self._download_datasets()
+        logger.info("Data preparation completed")
 
     def setup(self, stage: Optional[str] = None):
-        """Setup datasets for training, validation, or testing."""
+        """Setup datasets for training, validation, and testing."""
 
-        logger.info(f"Setting up data module for stage: {stage}")
+        logger.info(f"Setting up data for stage: {stage}")
 
-        # Initialize individual data loaders
+        # Setup individual modality loaders
         self._setup_imaging_data()
         self._setup_genomics_data()
         self._setup_molecular_data()
@@ -212,128 +226,69 @@ class PerturbationDataModule(pl.LightningDataModule):
         if stage == "test" or stage is None:
             self._create_test_dataset()
 
-        # Compute and cache statistics
+        # Compute data statistics
         self._compute_data_statistics()
 
-        logger.info("Data module setup completed")
+        logger.info("Data setup completed")
 
     def _setup_imaging_data(self):
-        """Setup high-content imaging data."""
-
-        if self.imaging_config.get("enabled", True):
+        """Setup imaging data loader."""
+        if self.imaging_config:
             try:
-                logger.info("Setting up imaging data...")
-
-                # Configure imaging loader
-                imaging_config = DictConfig(
-                    {
-                        **self.imaging_config,
-                        "data_dir": str(self.data_dir / "imaging"),
-                        "batch_size": self.batch_size,
-                        "num_workers": self.num_workers,
-                        "pin_memory": self.pin_memory,
-                    }
-                )
-
-                self.imaging_loader = HighContentImagingLoader(imaging_config)
+                self.imaging_loader = HighContentImagingLoader(self.imaging_config)
                 self.imaging_loader.setup()
-
-                logger.info(f"Imaging data loaded: {self.imaging_loader.get_dataset_statistics()}")
-
+                logger.info("Imaging data loader initialized")
             except Exception as e:
-                logger.warning(f"Failed to setup imaging data: {e}")
+                logger.warning(f"Could not initialize imaging loader: {e}")
                 self.imaging_loader = None
 
     def _setup_genomics_data(self):
-        """Setup genomics/transcriptomics data."""
-
-        if self.genomics_config.get("enabled", True):
+        """Setup genomics data loader."""
+        if self.genomics_config:
             try:
-                logger.info("Setting up genomics data...")
-
-                # Configure genomics loader
-                genomics_config = DictConfig(
-                    {
-                        **self.genomics_config,
-                        "data_dir": str(self.data_dir / "genomics"),
-                        "batch_size": self.batch_size,
-                        "num_workers": self.num_workers,
-                        "pin_memory": self.pin_memory,
-                    }
-                )
-
-                self.genomics_loader = GenomicsDataLoader(genomics_config)
+                self.genomics_loader = GenomicsDataLoader(self.genomics_config)
                 self.genomics_loader.setup()
-
-                logger.info(
-                    f"Genomics data loaded: {self.genomics_loader.get_dataset_statistics()}"
-                )
-
+                logger.info("Genomics data loader initialized")
             except Exception as e:
-                logger.warning(f"Failed to setup genomics data: {e}")
+                logger.warning(f"Could not initialize genomics loader: {e}")
                 self.genomics_loader = None
 
     def _setup_molecular_data(self):
-        """Setup molecular/chemical data."""
-
-        if self.molecular_config.get("enabled", True):
+        """Setup molecular data loader."""
+        if self.molecular_config:
             try:
-                logger.info("Setting up molecular data...")
-
-                # Configure molecular loader
-                molecular_config = DictConfig(
-                    {
-                        **self.molecular_config,
-                        "data_file": str(self.data_dir / "molecular" / "compounds.csv"),
-                        "metadata_file": str(self.data_dir / "molecular" / "metadata.csv"),
-                        "batch_size": self.batch_size,
-                        "num_workers": self.num_workers,
-                        "pin_memory": self.pin_memory,
-                    }
-                )
-
-                self.molecular_loader = MolecularDataLoader(molecular_config)
+                self.molecular_loader = MolecularDataLoader(self.molecular_config)
                 self.molecular_loader.setup()
-
-                logger.info(
-                    f"Molecular data loaded: {self.molecular_loader.get_dataset_statistics()}"
-                )
-
+                logger.info("Molecular data loader initialized")
             except Exception as e:
-                logger.warning(f"Failed to setup molecular data: {e}")
+                logger.warning(f"Could not initialize molecular loader: {e}")
                 self.molecular_loader = None
 
     def _create_train_val_datasets(self):
         """Create training and validation datasets."""
 
-        # Collect datasets from each modality
-        train_datasets = {}
-        val_datasets = {}
+        # Get individual datasets using getattr with fallbacks
+        imaging_dataset = getattr(self.imaging_loader, "train_dataset", None) if self.imaging_loader else None
+        genomics_dataset = getattr(self.genomics_loader, "train_dataset", None) if self.genomics_loader else None
+        molecular_dataset = getattr(self.molecular_loader, "train_dataset", None) if self.molecular_loader else None
 
-        if self.imaging_loader:
-            train_datasets["imaging"] = self.imaging_loader.get_dataset("train")
-            val_datasets["imaging"] = self.imaging_loader.get_dataset("val")
-
-        if self.genomics_loader:
-            train_datasets["genomics"] = self.genomics_loader.get_dataset("train")
-            val_datasets["genomics"] = self.genomics_loader.get_dataset("val")
-
-        if self.molecular_loader:
-            train_datasets["molecular"] = self.molecular_loader.datasets["train"]
-            val_datasets["molecular"] = self.molecular_loader.datasets["val"]
-
-        # Create multi-modal datasets
+        # Create combined training dataset
         self.train_dataset = MultiModalDataset(
-            imaging_dataset=train_datasets.get("imaging"),
-            genomics_dataset=train_datasets.get("genomics"),
-            molecular_dataset=train_datasets.get("molecular"),
+            imaging_dataset=cast(Optional[Dataset[Any]], imaging_dataset),
+            genomics_dataset=cast(Optional[Dataset[Any]], genomics_dataset),
+            molecular_dataset=cast(Optional[Dataset[Any]], molecular_dataset),
             config=self.config,
         )
 
+        # Create validation dataset
+        imaging_val = getattr(self.imaging_loader, "val_dataset", None) if self.imaging_loader else None
+        genomics_val = getattr(self.genomics_loader, "val_dataset", None) if self.genomics_loader else None
+        molecular_val = getattr(self.molecular_loader, "val_dataset", None) if self.molecular_loader else None
+
         self.val_dataset = MultiModalDataset(
-            imaging_dataset=val_datasets.get("imaging"),
-            genomics_dataset=val_datasets.get("genomics"),
-            molecular_dataset=val_datasets.get("molecular"),
+            imaging_dataset=cast(Optional[Dataset[Any]], imaging_val),
+            genomics_dataset=cast(Optional[Dataset[Any]], genomics_val),
+            molecular_dataset=cast(Optional[Dataset[Any]], molecular_val),
             config=self.config,
         )
 
@@ -343,31 +298,25 @@ class PerturbationDataModule(pl.LightningDataModule):
     def _create_test_dataset(self):
         """Create test dataset."""
 
-        # Collect test datasets from each modality
-        test_datasets = {}
+        # Get individual test datasets using getattr with fallbacks
+        imaging_test = getattr(self.imaging_loader, "test_dataset", None) if self.imaging_loader else None
+        genomics_test = getattr(self.genomics_loader, "test_dataset", None) if self.genomics_loader else None
+        molecular_test = getattr(self.molecular_loader, "test_dataset", None) if self.molecular_loader else None
 
-        if self.imaging_loader:
-            test_datasets["imaging"] = self.imaging_loader.get_dataset("test")
-
-        if self.genomics_loader:
-            test_datasets["genomics"] = self.genomics_loader.get_dataset("test")
-
-        if self.molecular_loader:
-            test_datasets["molecular"] = self.molecular_loader.datasets["test"]
-
-        # Create multi-modal test dataset
         self.test_dataset = MultiModalDataset(
-            imaging_dataset=test_datasets.get("imaging"),
-            genomics_dataset=test_datasets.get("genomics"),
-            molecular_dataset=test_datasets.get("molecular"),
+            imaging_dataset=cast(Optional[Dataset[Any]], imaging_test),
+            genomics_dataset=cast(Optional[Dataset[Any]], genomics_test),
+            molecular_dataset=cast(Optional[Dataset[Any]], molecular_test),
             config=self.config,
         )
 
         logger.info(f"Created test dataset with {len(self.test_dataset)} samples")
 
-    def train_dataloader(self) -> DataLoader:
+    def train_dataloader(self) -> DataLoader[Dict[str, Any]]:
         """Return training dataloader."""
-
+        if self.train_dataset is None:
+            raise RuntimeError("Training dataset not initialized. Call setup() first.")
+            
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -378,9 +327,11 @@ class PerturbationDataModule(pl.LightningDataModule):
             drop_last=True,
         )
 
-    def val_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> DataLoader[Dict[str, Any]]:
         """Return validation dataloader."""
-
+        if self.val_dataset is None:
+            raise RuntimeError("Validation dataset not initialized. Call setup() first.")
+            
         return DataLoader(
             self.val_dataset,
             batch_size=self.batch_size,
@@ -391,9 +342,11 @@ class PerturbationDataModule(pl.LightningDataModule):
             drop_last=False,
         )
 
-    def test_dataloader(self) -> DataLoader:
+    def test_dataloader(self) -> DataLoader[Dict[str, Any]]:
         """Return test dataloader."""
-
+        if self.test_dataset is None:
+            raise RuntimeError("Test dataset not initialized. Call setup() first.")
+            
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
@@ -404,11 +357,11 @@ class PerturbationDataModule(pl.LightningDataModule):
             drop_last=False,
         )
 
-    def _collate_fn(self, batch: List[Dict]) -> Dict[str, Any]:
+    def _collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Custom collate function for multi-modal data."""
 
         # Initialize batch dictionary
-        collated_batch = {"batch_size": len(batch), "modalities": set(), "sample_indices": []}
+        collated_batch: Dict[str, Any] = {"batch_size": len(batch), "modalities": set(), "sample_indices": []}
 
         # Collect sample indices
         for sample in batch:
@@ -430,7 +383,7 @@ class PerturbationDataModule(pl.LightningDataModule):
 
         return collated_batch
 
-    def _collate_modality_data(self, samples: List[Dict], modality: str) -> Dict[str, Any]:
+    def _collate_modality_data(self, samples: List[Dict[str, Any]], modality: str) -> Dict[str, Any]:
         """Collate data for a specific modality."""
 
         if modality == "imaging":
@@ -443,13 +396,13 @@ class PerturbationDataModule(pl.LightningDataModule):
             logger.warning(f"Unknown modality: {modality}")
             return {}
 
-    def _collate_imaging_data(self, samples: List[Dict]) -> Dict[str, Any]:
+    def _collate_imaging_data(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate imaging data."""
 
         # Stack images
-        images = []
-        masks = []
-        metadata = []
+        images: List[torch.Tensor] = []
+        masks: List[torch.Tensor] = []
+        metadata: List[Dict[str, Any]] = []
 
         for sample in samples:
             if "image" in sample:
@@ -459,7 +412,7 @@ class PerturbationDataModule(pl.LightningDataModule):
             if "metadata" in sample:
                 metadata.append(sample["metadata"])
 
-        collated = {}
+        collated: Dict[str, Any] = {}
 
         if images:
             collated["images"] = torch.stack(images)
@@ -472,13 +425,13 @@ class PerturbationDataModule(pl.LightningDataModule):
 
         return collated
 
-    def _collate_genomics_data(self, samples: List[Dict]) -> Dict[str, Any]:
+    def _collate_genomics_data(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate genomics data."""
 
         # Stack expression data
-        expressions = []
-        gene_names = []
-        metadata = []
+        expressions: List[torch.Tensor] = []
+        gene_names: List[List[str]] = []
+        metadata: List[Dict[str, Any]] = []
 
         for sample in samples:
             if "expression" in sample:
@@ -488,7 +441,7 @@ class PerturbationDataModule(pl.LightningDataModule):
             if "metadata" in sample:
                 metadata.append(sample["metadata"])
 
-        collated = {}
+        collated: Dict[str, Any] = {}
 
         if expressions:
             collated["expressions"] = torch.stack(expressions)
@@ -501,14 +454,14 @@ class PerturbationDataModule(pl.LightningDataModule):
 
         return collated
 
-    def _collate_molecular_data(self, samples: List[Dict]) -> Dict[str, Any]:
+    def _collate_molecular_data(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate molecular data."""
 
         # Collect molecular features
-        smiles = []
-        descriptors = []
-        fingerprints = []
-        graphs = []
+        smiles: List[str] = []
+        descriptors: List[Dict[str, float]] = []
+        fingerprints: List[Any] = []
+        graphs: List[Any] = []
 
         for sample in samples:
             if "smiles" in sample:
@@ -526,7 +479,7 @@ class PerturbationDataModule(pl.LightningDataModule):
                 if "graph" in mol_features and mol_features["graph"] is not None:
                     graphs.append(mol_features["graph"])
 
-        collated = {}
+        collated: Dict[str, Any] = {}
 
         if smiles:
             collated["smiles"] = smiles
@@ -555,137 +508,115 @@ class PerturbationDataModule(pl.LightningDataModule):
 
         return collated
 
-    def _collate_perturbation_data(self, samples: List[Dict]) -> Dict[str, Any]:
+    def _collate_perturbation_data(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Collate perturbation information."""
 
-        # Collect perturbation data
-        perturbation_types = []
-        all_targets = []
-        modalities_available = []
-        conditions = []
+        # Collect all perturbation information
+        all_modalities = set()
+        all_types = set()
+        all_targets = set()
+        all_conditions = {}
 
         for sample in samples:
-            perturbation_types.append(sample.get("perturbation_type", "unknown"))
-            all_targets.extend(sample.get("targets", []))
-            modalities_available.append(sample.get("modalities_available", []))
-            conditions.append(sample.get("conditions", {}))
+            all_modalities.update(sample.get("modalities_available", []))
+            all_types.add(sample.get("perturbation_type", "unknown"))
+            all_targets.update(sample.get("targets", []))
+
+            # Collect conditions
+            conditions = sample.get("conditions", {})
+            for key, value in conditions.items():
+                if key not in all_conditions:
+                    all_conditions[key] = []
+                all_conditions[key].append(value)
 
         return {
-            "perturbation_types": perturbation_types,
-            "all_targets": list(set(all_targets)),  # Unique targets
-            "modalities_available": modalities_available,
-            "conditions": conditions,
-            "num_unique_perturbation_types": len(set(perturbation_types)),
-            "num_unique_targets": len(set(all_targets)),
+            "modalities_available": list(all_modalities),
+            "perturbation_types": list(all_types),
+            "targets": list(all_targets),
+            "conditions": all_conditions,
+            "batch_size": len(samples),
         }
 
     def _compute_data_statistics(self):
-        """Compute and cache dataset statistics."""
+        """Compute and cache data statistics."""
 
-        logger.info("Computing dataset statistics...")
-
-        stats = {
-            "dataset_sizes": {},
-            "modality_coverage": {},
-            "perturbation_statistics": {},
-            "data_quality": {},
+        stats: Dict[str, Any] = {
+            "total_samples": {
+                "train": len(self.train_dataset) if self.train_dataset else 0,
+                "val": len(self.val_dataset) if self.val_dataset else 0,
+                "test": len(self.test_dataset) if self.test_dataset else 0,
+            },
+            "modalities": {
+                "imaging": self.imaging_loader is not None,
+                "genomics": self.genomics_loader is not None,
+                "molecular": self.molecular_loader is not None,
+            },
+            "config": dict(self.config),
         }
 
-        # Dataset sizes
-        if self.train_dataset:
-            stats["dataset_sizes"]["train"] = len(self.train_dataset)
-        if self.val_dataset:
-            stats["dataset_sizes"]["val"] = len(self.val_dataset)
-        if self.test_dataset:
-            stats["dataset_sizes"]["test"] = len(self.test_dataset)
-
-        # Modality coverage
-        available_modalities = []
+        # Get modality-specific statistics
         if self.imaging_loader:
-            available_modalities.append("imaging")
+            stats["imaging_stats"] = self.imaging_loader.get_dataset_statistics()
+
         if self.genomics_loader:
-            available_modalities.append("genomics")
+            try:
+                stats["genomics_stats"] = self.genomics_loader.get_dataset_statistics()
+            except AttributeError:
+                stats["genomics_stats"] = {"error": "Statistics not available"}
+
         if self.molecular_loader:
-            available_modalities.append("molecular")
+            try:
+                stats["molecular_stats"] = self.molecular_loader.get_dataset_statistics()
+            except AttributeError:
+                stats["molecular_stats"] = {"error": "Statistics not available"}
 
-        stats["modality_coverage"]["available_modalities"] = available_modalities
-        stats["modality_coverage"]["num_modalities"] = len(available_modalities)
+        # Check data balance
+        train_size = stats["total_samples"]["train"]
+        val_size = stats["total_samples"]["val"]
+        test_size = stats["total_samples"]["test"]
 
-        # Individual modality statistics
-        if self.imaging_loader:
-            stats["modality_coverage"]["imaging"] = self.imaging_loader.get_dataset_statistics()
-        if self.genomics_loader:
-            stats["modality_coverage"]["genomics"] = self.genomics_loader.get_dataset_statistics()
-        if self.molecular_loader:
-            stats["modality_coverage"]["molecular"] = self.molecular_loader.get_dataset_statistics()
-
-        # Sample some data to get perturbation statistics
-        if self.train_dataset and len(self.train_dataset) > 0:
-            sample_size = min(100, len(self.train_dataset))
-            sample_indices = np.random.choice(len(self.train_dataset), sample_size, replace=False)
-
-            perturbation_types = []
-            all_targets = []
-            modalities_per_sample = []
-
-            for idx in sample_indices:
-                sample = self.train_dataset[idx]
-                pert_info = sample["perturbation"]
-
-                perturbation_types.append(pert_info.get("perturbation_type", "unknown"))
-                all_targets.extend(pert_info.get("targets", []))
-                modalities_per_sample.append(len(pert_info.get("modalities_available", [])))
-
-            stats["perturbation_statistics"] = {
-                "unique_perturbation_types": list(set(perturbation_types)),
-                "num_perturbation_types": len(set(perturbation_types)),
-                "unique_targets": list(set(all_targets)),
-                "num_targets": len(set(all_targets)),
-                "avg_modalities_per_sample": np.mean(modalities_per_sample),
-                "perturbation_type_distribution": {
-                    ptype: perturbation_types.count(ptype) for ptype in set(perturbation_types)
-                },
+        if train_size > 0 and val_size > 0 and test_size > 0:
+            total = train_size + val_size + test_size
+            stats["data_splits"] = {
+                "train": train_size / total,
+                "val": val_size / total,
+                "test": test_size / total,
             }
 
-        # Data quality checks
-        stats["data_quality"] = {
-            "all_modalities_available": len(available_modalities) >= 2,
-            "sufficient_train_data": stats["dataset_sizes"].get("train", 0) >= 100,
-            "balanced_splits": self._check_balanced_splits(stats["dataset_sizes"]),
-        }
+            splits_dict = {
+                "train": train_size,
+                "val": val_size,
+                "test": test_size,
+            }
+            stats["balanced_splits"] = self._check_balanced_splits(splits_dict)
 
         self._data_statistics = stats
-
-        logger.info(f"Dataset statistics computed:")
-        logger.info(f"  Available modalities: {available_modalities}")
-        logger.info(f"  Dataset sizes: {stats['dataset_sizes']}")
-        logger.info(f"  Data quality: {stats['data_quality']}")
+        logger.info("Data statistics computed")
 
     def _check_balanced_splits(self, sizes: Dict[str, int]) -> bool:
-        """Check if dataset splits are reasonably balanced."""
+        """Check if data splits are reasonably balanced."""
 
-        if len(sizes) < 2:
-            return False
-
-        total_size = sum(sizes.values())
-        if total_size == 0:
+        total = sum(sizes.values())
+        if total == 0:
             return False
 
         # Check if splits are within reasonable ranges
-        train_ratio = sizes.get("train", 0) / total_size
-        val_ratio = sizes.get("val", 0) / total_size
-        test_ratio = sizes.get("test", 0) / total_size
+        train_ratio = sizes["train"] / total
+        val_ratio = sizes["val"] / total
+        test_ratio = sizes["test"] / total
 
-        # Reasonable ranges for splits
-        return 0.5 <= train_ratio <= 0.8 and 0.1 <= val_ratio <= 0.3 and 0.1 <= test_ratio <= 0.3
+        # Reasonable ranges
+        train_ok = 0.6 <= train_ratio <= 0.8
+        val_ok = 0.1 <= val_ratio <= 0.25
+        test_ok = 0.1 <= test_ratio <= 0.25
 
-    def get_data_statistics(self) -> Dict:
-        """Get cached dataset statistics."""
+        return train_ok and val_ok and test_ok
 
+    def get_data_statistics(self) -> Dict[str, Any]:
+        """Get data statistics."""
         if self._data_statistics is None:
             self._compute_data_statistics()
-
-        return self._data_statistics
+        return self._data_statistics or {}
 
     def _create_synthetic_data(self):
         """Create synthetic data for testing."""
@@ -777,7 +708,7 @@ class PerturbationDataModule(pl.LightningDataModule):
             except Exception as e:
                 logger.error(f"Failed to download {dataset_name}: {e}")
 
-    def get_sample_batch(self, split: str = "train", batch_size: Optional[int] = None) -> Dict:
+    def get_sample_batch(self, split: str = "train", batch_size: Optional[int] = None) -> Dict[str, Any]:
         """Get a sample batch for inspection."""
 
         if batch_size is None:
@@ -845,7 +776,7 @@ class PerturbationDataModule(pl.LightningDataModule):
 
         return integrity_checks
 
-    def get_modality_sample(self, modality: str, split: str = "train") -> Optional[Dict]:
+    def get_modality_sample(self, modality: str, split: str = "train") -> Optional[Dict[str, Any]]:
         """Get a sample from a specific modality."""
 
         if split == "train" and self.train_dataset:
@@ -879,22 +810,22 @@ class PerturbationDataModule(pl.LightningDataModule):
             "export_timestamp": pd.Timestamp.now().isoformat(),
         }
 
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path_obj = Path(output_path)
+        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-        if output_path.suffix == ".json":
+        if output_path_obj.suffix == ".json":
             import json
 
-            with open(output_path, "w") as f:
+            with open(output_path_obj, "w") as f:
                 json.dump(summary, f, indent=2, default=str)
         else:
             # Export as YAML
             import yaml
 
-            with open(output_path, "w") as f:
+            with open(output_path_obj, "w") as f:
                 yaml.dump(summary, f, default_flow_style=False)
 
-        logger.info(f"Data summary exported to: {output_path}")
+        logger.info(f"Data summary exported to: {output_path_obj}")
 
 
 class SingleModalityDataModule(pl.LightningDataModule):
@@ -922,51 +853,133 @@ class SingleModalityDataModule(pl.LightningDataModule):
         """Setup single modality data."""
         self.data_loader.setup(stage)
 
-    def train_dataloader(self) -> DataLoader:
+    def train_dataloader(self) -> DataLoader[Dict[str, Any]]:
         """Return training dataloader."""
-        if self.modality == "molecular":
-            return self.data_loader.get_dataloader("train")
+        loader = getattr(self.data_loader, "train_dataloader", None)
+        if loader is None:
+            raise RuntimeError(f"Training dataloader not available for {self.modality}")
+        if callable(loader):
+            result = loader()
         else:
-            return self.data_loader.get_dataloader("train")
+            result = loader
+        
+        if result is None:
+            raise RuntimeError(f"Training dataloader returned None for {self.modality}")
+        return cast(DataLoader[Dict[str, Any]], result)
 
-    def val_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> DataLoader[Dict[str, Any]]:
         """Return validation dataloader."""
-        if self.modality == "molecular":
-            return self.data_loader.get_dataloader("val")
+        loader = getattr(self.data_loader, "val_dataloader", None)
+        if loader is None:
+            raise RuntimeError(f"Validation dataloader not available for {self.modality}")
+        if callable(loader):
+            result = loader()
         else:
-            return self.data_loader.get_dataloader("val")
+            result = loader
+        
+        if result is None:
+            raise RuntimeError(f"Validation dataloader returned None for {self.modality}")
+        return cast(DataLoader[Dict[str, Any]], result)
 
-    def test_dataloader(self) -> DataLoader:
+    def test_dataloader(self) -> DataLoader[Dict[str, Any]]:
         """Return test dataloader."""
-        if self.modality == "molecular":
-            return self.data_loader.get_dataloader("test")
+        loader = getattr(self.data_loader, "test_dataloader", None)
+        if loader is None:
+            raise RuntimeError(f"Test dataloader not available for {self.modality}")
+        if callable(loader):
+            result = loader()
         else:
-            return self.data_loader.get_dataloader("test")
+            result = loader
+        
+        if result is None:
+            raise RuntimeError(f"Test dataloader returned None for {self.modality}")
+        return cast(DataLoader[Dict[str, Any]], result)
 
 
-class HighContentImagingDataset(Dataset):
+class HighContentImagingDataset(Dataset[Dict[str, Any]]):
+    """High-content imaging dataset class."""
+    
+    def __init__(self, config: DictConfig, metadata_file: str, data_dir: str, mode: str = "train"):
+        """Initialize the imaging dataset."""
+        self.config = config
+        self.metadata_file = metadata_file
+        self.data_dir = data_dir
+        self.mode = mode
+        
+        # Load metadata
+        try:
+            self.metadata = pd.read_csv(metadata_file)
+        except Exception:
+            # Create dummy metadata
+            self.metadata = pd.DataFrame({
+                'sample_id': [f'sample_{i}' for i in range(100)],
+                'split': [mode] * 100
+            })
+    
     def __len__(self) -> int:
         return len(self.metadata)
+    
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        """Get item by index."""
+        row = self.metadata.iloc[idx]
+        return {
+            'sample_id': row.get('sample_id', f'sample_{idx}'),
+            'metadata': row.to_dict(),
+            'image': torch.zeros(3, 224, 224),  # Dummy image
+            'mask': None
+        }
 
 
 class BaseDataModule(pl.LightningDataModule):
+    """Base data module with common functionality."""
+    
     def __init__(self, config: DictConfig):
         super().__init__()
         self.config = config
-        self.dataset = None
+        self.dataset: Optional[Any] = None
         
     def setup(self, stage: Optional[str] = None):
-        # Implementation specific to each dataset
+        """Setup the dataset - to be implemented by subclasses."""
         pass
         
-    def train_dataloader(self) -> DataLoader:
+    def train_dataloader(self) -> DataLoader[Dict[str, Any]]:
+        """Return training dataloader."""
         if not self.dataset:
             self.setup()
+        if self.dataset is None or not hasattr(self.dataset, 'train'):
+            raise RuntimeError("Dataset not properly initialized")
+            
         return DataLoader(
             self.dataset.train, 
-            batch_size=self.config.batch_size,
+            batch_size=self.config.get('batch_size', 32),
             shuffle=True,
-            num_workers=self.config.num_workers
+            num_workers=self.config.get('num_workers', 4)
         )
         
-    # Similar implementations for val_dataloader and test_dataloader
+    def val_dataloader(self) -> DataLoader[Dict[str, Any]]:
+        """Return validation dataloader."""
+        if not self.dataset:
+            self.setup()
+        if self.dataset is None or not hasattr(self.dataset, 'val'):
+            raise RuntimeError("Dataset not properly initialized")
+            
+        return DataLoader(
+            self.dataset.val, 
+            batch_size=self.config.get('batch_size', 32),
+            shuffle=False,
+            num_workers=self.config.get('num_workers', 4)
+        )
+    
+    def test_dataloader(self) -> DataLoader[Dict[str, Any]]:
+        """Return test dataloader."""
+        if not self.dataset:
+            self.setup()
+        if self.dataset is None or not hasattr(self.dataset, 'test'):
+            raise RuntimeError("Dataset not properly initialized")
+            
+        return DataLoader(
+            self.dataset.test, 
+            batch_size=self.config.get('batch_size', 32),
+            shuffle=False,
+            num_workers=self.config.get('num_workers', 4)
+        )

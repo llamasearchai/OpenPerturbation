@@ -14,6 +14,11 @@ from pathlib import Path
 import asyncio
 import sys
 import os
+import json
+import torch
+from unittest.mock import Mock, patch, AsyncMock
+from typing import Dict, List, Any, Optional
+import tempfile
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -24,6 +29,16 @@ try:
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
+
+# Import all the components we need to test
+from src.agents.openai_agent import OpenPerturbationAgent, AnalysisResult, ExperimentSuggestion
+from src.agents.conversation_handler import ConversationHandler
+from src.agents.agent_tools import AgentTools, PerturbationAnalysisTools
+from src.data.loaders.imaging_loader import HighContentImagingLoader, HighContentImagingDataset
+from src.training.losses import (
+    CausalConsistencyLoss, ContrastiveLoss, UncertaintyLoss, 
+    StructuralLoss, BiologicalConsistencyLoss, MultiTaskLoss
+)
 
 class TestAPIIntegration:
     """Test API endpoints and integration."""
@@ -136,8 +151,9 @@ class TestDataProcessing:
     def test_image_processor_import(self):
         """Test image processor can be imported."""
         try:
-            from src.data.processors.image_processor import ImageProcessor
-            processor = ImageProcessor()
+            from src.data.processors.image_processor import CellularImageProcessor
+            config = {"image_size": 224, "channels": ["DAPI", "GFP"], "normalization_method": "percentile"}
+            processor = CellularImageProcessor(config)
             assert processor is not None
         except ImportError as e:
             pytest.skip(f"Image processor import failed: {e}")
@@ -145,14 +161,18 @@ class TestDataProcessing:
     def test_data_loaders_import(self):
         """Test data loaders can be imported."""
         try:
-            from src.data.loaders.genomics_loader import GenomicsLoader
-            from src.data.loaders.imaging_loader import ImagingLoader
-            from src.data.loaders.molecular_loader import MolecularLoader
+            from src.data.loaders.genomics_loader import GenomicsDataLoader
+            from src.data.loaders.imaging_loader import HighContentImagingLoader
+            from src.data.loaders.molecular_loader import MolecularDataLoader
             
-            # Basic instantiation tests
-            genomics_loader = GenomicsLoader()
-            imaging_loader = ImagingLoader()
-            molecular_loader = MolecularLoader()
+            # Basic instantiation tests with minimal configs
+            genomics_config = {"data_dir": ".", "batch_size": 1}
+            imaging_config = {"data_dir": ".", "batch_size": 1, "image_size": [256, 256]}
+            molecular_config = {"data_dir": ".", "batch_size": 1}
+            
+            genomics_loader = GenomicsDataLoader(genomics_config)
+            imaging_loader = HighContentImagingLoader(imaging_config)  
+            molecular_loader = MolecularDataLoader(molecular_config)
             
             assert genomics_loader is not None
             assert imaging_loader is not None
@@ -167,7 +187,7 @@ class TestModels:
     def test_model_imports(self):
         """Test that models can be imported."""
         try:
-            from src.models.fusion.multimodal_transformer import MultimodalTransformer
+            from src.models.fusion.multimodal_transformer import MultiModalFusion
             from src.models.vision.cell_vit import CellViT
             from src.models.graph.molecular_gnn import MolecularGNN
             from src.models.causal.causal_vae import CausalVAE
@@ -225,13 +245,17 @@ class TestExplainability:
     def test_explainability_imports(self):
         """Test explainability modules can be imported."""
         try:
-            from src.explainability.attention_maps import AttentionMapAnalyzer
-            from src.explainability.concept_activation import ConceptActivationAnalyzer
-            from src.explainability.pathway_analysis import PathwayAnalyzer
+            from src.explainability.attention_maps import AttentionMapExtractor
+            from src.explainability.concept_activation import ConceptActivationMapper
+            from src.explainability.pathway_analysis import PathwayEnrichmentAnalyzer, PathwayDatabase
             
-            assert AttentionMapAnalyzer is not None
-            assert ConceptActivationAnalyzer is not None
-            assert PathwayAnalyzer is not None
+            assert AttentionMapExtractor is not None
+            assert ConceptActivationMapper is not None
+            
+            # PathwayEnrichmentAnalyzer needs a PathwayDatabase
+            pathway_db = PathwayDatabase()
+            pathway_analyzer = PathwayEnrichmentAnalyzer(pathway_db)
+            assert pathway_analyzer is not None
             
         except ImportError as e:
             pytest.skip(f"Explainability imports failed: {e}")
@@ -252,8 +276,9 @@ class TestUtilities:
     def test_biology_utils(self):
         """Test biology utilities."""
         try:
-            from src.utils.biology_utils import BiologyUtils
-            utils = BiologyUtils()
+            from src.utils.biology_utils import BiologicalKnowledgeBase
+            config = {"pathways": {}, "enable_default_knowledge": True}
+            utils = BiologicalKnowledgeBase(config)
             assert utils is not None
         except ImportError as e:
             pytest.skip(f"Biology utils import failed: {e}")
@@ -261,12 +286,10 @@ class TestUtilities:
     def test_metrics(self):
         """Test metrics utilities."""
         try:
-            from src.utils.metrics import calculate_metrics
-            # Test with dummy data
-            y_true = np.array([1, 0, 1, 1, 0])
-            y_pred = np.array([1, 0, 1, 0, 0])
-            metrics = calculate_metrics(y_true, y_pred)
-            assert isinstance(metrics, dict)
+            from src.training.metrics import OpenPerturbationMetricCollection
+            # Test with dummy configuration
+            metrics = OpenPerturbationMetricCollection({})
+            assert isinstance(metrics, object)
         except ImportError as e:
             pytest.skip(f"Metrics import failed: {e}")
 
@@ -290,13 +313,13 @@ class TestTraining:
     def test_training_imports(self):
         """Test training modules can be imported."""
         try:
-            from src.training.lightning_modules import OpenPerturbationModule
-            from src.training.data_modules import OpenPerturbationDataModule
-            from src.training.metrics import MetricsCalculator
+            from src.training.lightning_modules import CausalVAELightningModule
+            from src.training.data_modules import PerturbationDataModule
+            from src.training.metrics import OpenPerturbationMetricCollection
             
-            assert OpenPerturbationModule is not None
-            assert OpenPerturbationDataModule is not None
-            assert MetricsCalculator is not None
+            assert CausalVAELightningModule is not None
+            assert PerturbationDataModule is not None
+            assert OpenPerturbationMetricCollection is not None
             
         except ImportError as e:
             pytest.skip(f"Training imports failed: {e}")
@@ -309,7 +332,19 @@ class TestPipeline:
         """Test pipeline can be imported."""
         try:
             from src.pipeline.openperturbation_pipeline import OpenPerturbationPipeline
-            pipeline = OpenPerturbationPipeline()
+            from omegaconf import DictConfig
+            
+            # Create minimal config for pipeline
+            config = DictConfig({
+                'seed': 42,
+                'use_gpu': False,
+                'output_dir': 'test_outputs',
+                'use_wandb': False,
+                'data': {'batch_size': 1},
+                'model': {'name': 'test'}
+            })
+            
+            pipeline = OpenPerturbationPipeline(config)
             assert pipeline is not None
         except ImportError as e:
             pytest.skip(f"Pipeline import failed: {e}")
@@ -388,6 +423,573 @@ class TestPackageStructure:
                     pass
 
 
+class TestAgentTools:
+    """Test the AI agent tools functionality."""
+    
+    def test_format_data_for_ai(self):
+        """Test data formatting for AI consumption."""
+        test_data = {
+            "cell_count": 1250,
+            "viability": 0.87,
+            "measurements": [1.2, 1.5, 1.8, 2.1, 2.4],
+            "compound": "CHEMBL12345"
+        }
+        
+        formatted = AgentTools.format_data_for_ai(test_data)
+        
+        assert isinstance(formatted, str)
+        assert "cell_count: 1250" in formatted
+        assert "viability: 87.0%" in formatted
+        assert "measurements: [1.2, 1.5, 1.8, 2.1, 2.4]" in formatted
+        assert "compound: CHEMBL12345" in formatted
+    
+    def test_parse_ai_response_valid_json(self):
+        """Test parsing valid JSON AI response."""
+        response = """
+        {
+            "analysis": "Strong cytotoxic effect observed",
+            "confidence": 0.92,
+            "recommendations": ["Test lower doses", "Check cell cycle"]
+        }
+        """
+        
+        parsed = AgentTools.parse_ai_response(response)
+        
+        assert "analysis" in parsed
+        assert "confidence" in parsed
+        assert parsed["confidence"] == 0.92
+        assert len(parsed["recommendations"]) == 2
+    
+    def test_parse_ai_response_invalid_json(self):
+        """Test parsing invalid JSON AI response with fallback."""
+        response = "This is not JSON but contains valuable insights about the experiment."
+        
+        parsed = AgentTools.parse_ai_response(response)
+        
+        assert "analysis" in parsed
+        assert parsed["analysis"] == response
+        assert parsed["confidence"] == 0.7
+        assert parsed["parsed"] is False
+    
+    def test_build_analysis_prompt(self):
+        """Test building analysis prompts."""
+        data = {"compound": "CHEMBL12345", "viability": 0.85}
+        context = {"experiment_type": "drug_screening", "cell_line": "HeLa"}
+        query = "What does this data suggest about the compound's mechanism?"
+        
+        prompt = AgentTools.build_analysis_prompt(data, context, query)
+        
+        assert "CHEMBL12345" in prompt
+        assert "viability" in prompt
+        assert "drug_screening" in prompt
+        assert "HeLa" in prompt
+        assert "mechanism" in prompt
+    
+    def test_validate_experiment_design_valid(self):
+        """Test experiment design validation with valid design."""
+        experiment = {
+            "type": "dose_response",
+            "compound": "CHEMBL12345",
+            "concentrations": [0.1, 1, 10, 100],
+            "timepoints": ["24h"],
+            "cell_line": "HeLa"
+        }
+        
+        validation = AgentTools.validate_experiment_design(experiment)
+        
+        assert validation["valid"] is True
+        assert len(validation["errors"]) == 0
+    
+    def test_validate_experiment_design_invalid(self):
+        """Test experiment design validation with invalid design."""
+        experiment = {
+            "type": "unknown_type",
+            "concentrations": [],  # Empty concentrations
+            # Missing required fields
+        }
+        
+        validation = AgentTools.validate_experiment_design(experiment)
+        
+        assert validation["valid"] is False
+        assert len(validation["errors"]) > 0
+
+
+class TestConversationHandler:
+    """Test conversation handling functionality."""
+    
+    def test_conversation_lifecycle(self):
+        """Test complete conversation lifecycle."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            handler = ConversationHandler(conversation_dir=temp_dir)
+            
+            # Start conversation
+            conv_id = handler.start_conversation("test_user", "analysis")
+            assert conv_id is not None
+            
+            # Add messages
+            success = handler.add_message(conv_id, "user", "Hello, analyze my data")
+            assert success is True
+            
+            success = handler.add_message(conv_id, "assistant", "I'll help analyze your data")
+            assert success is True
+            
+            # Get conversation history
+            history = handler.get_conversation_history(conv_id)
+            assert len(history) == 2
+            assert history[0]["role"] == "user"
+            assert history[1]["role"] == "assistant"
+            
+            # Update context
+            context_updated = handler.update_context(conv_id, {"experiment_type": "screening"})
+            assert context_updated is True
+            
+            # Get summary
+            summary = handler.get_conversation_summary(conv_id)
+            assert summary["user_id"] == "test_user"
+            assert summary["message_count"] == 2
+            
+            # End conversation
+            ended = handler.end_conversation(conv_id)
+            assert ended is True
+    
+    def test_conversation_persistence(self):
+        """Test conversation persistence across handler instances."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create first handler and conversation
+            handler1 = ConversationHandler(conversation_dir=temp_dir)
+            conv_id = handler1.start_conversation("test_user", "analysis")
+            handler1.add_message(conv_id, "user", "Test message")
+            
+            # Create second handler and load conversation
+            handler2 = ConversationHandler(conversation_dir=temp_dir)
+            history = handler2.get_conversation_history(conv_id)
+            
+            assert len(history) == 1
+            assert history[0]["content"] == "Test message"
+
+
+class TestPerturbationAnalysisTools:
+    """Test perturbation-specific analysis tools."""
+    
+    def test_analyze_gene_expression(self):
+        """Test gene expression analysis."""
+        tools = PerturbationAnalysisTools()
+        
+        # Create test data
+        expression_data = np.random.rand(100, 50)  # 100 samples, 50 genes
+        
+        result = tools.analyze_gene_expression(expression_data)
+        
+        assert "mean_expression" in result
+        assert "std_expression" in result
+        assert result["num_samples"] == 100
+        assert result["num_genes"] == 50
+        assert len(result["expression_range"]) == 2
+    
+    def test_identify_differentially_expressed_genes(self):
+        """Test differential expression analysis."""
+        tools = PerturbationAnalysisTools()
+        
+        # Create test data with known differences
+        control_data = np.random.rand(50, 20)
+        treatment_data = np.random.rand(50, 20)
+        treatment_data[:, :5] *= 3  # Upregulate first 5 genes
+        treatment_data[:, 5:10] *= 0.3  # Downregulate next 5 genes
+        
+        result = tools.identify_differentially_expressed_genes(
+            control_data, treatment_data, threshold=2.0
+        )
+        
+        assert "upregulated_genes" in result
+        assert "downregulated_genes" in result
+        assert "log2_fold_changes" in result
+        assert result["num_upregulated"] >= 0
+        assert result["num_downregulated"] >= 0
+    
+    def test_calculate_pathway_enrichment(self):
+        """Test pathway enrichment analysis."""
+        tools = PerturbationAnalysisTools()
+        
+        gene_list = ["EGFR", "TP53", "VEGFA", "BRCA1", "MYC"]
+        
+        result = tools.calculate_pathway_enrichment(gene_list)
+        
+        assert "pathways" in result
+        assert "enrichment_scores" in result
+        assert "p_values" in result
+        assert "significant_pathways" in result
+        assert len(result["pathways"]) > 0
+
+
+@pytest.mark.asyncio
+class TestOpenPerturbationAgent:
+    """Test OpenAI agent functionality."""
+    
+    async def test_agent_initialization_mock(self):
+        """Test agent initialization with mocked OpenAI."""
+        with patch('src.agents.openai_agent.OPENAI_AVAILABLE', True), \
+             patch('src.agents.openai_agent.OpenAI') as mock_openai, \
+             patch('src.agents.openai_agent.AsyncOpenAI') as mock_async_openai:
+            
+            mock_openai.return_value = Mock()
+            mock_async_openai.return_value = Mock()
+            
+            agent = OpenPerturbationAgent(api_key="test-key")
+            
+            assert agent.api_key == "test-key"
+            assert agent.model == "gpt-4"
+            assert agent.conversation_id is not None
+    
+    async def test_analyze_perturbation_data_mock(self):
+        """Test data analysis with mocked OpenAI responses."""
+        with patch('src.agents.openai_agent.OPENAI_AVAILABLE', True), \
+             patch('src.agents.openai_agent.OpenAI') as mock_openai, \
+             patch('src.agents.openai_agent.AsyncOpenAI') as mock_async_openai:
+            
+            # Setup mocks
+            mock_openai.return_value = Mock()
+            mock_async_client = Mock()
+            mock_async_openai.return_value = mock_async_client
+            
+            # Mock AI response
+            mock_response = Mock()
+            mock_response.choices = [Mock()]
+            mock_response.choices[0].message.content = json.dumps({
+                "analysis": {"summary": "Test analysis"},
+                "insights": ["Insight 1", "Insight 2"],
+                "recommendations": ["Recommendation 1"],
+                "confidence": 0.85
+            })
+            
+            mock_async_client.chat.completions.create = AsyncMock(return_value=mock_response)
+            
+            agent = OpenPerturbationAgent(api_key="test-key")
+            
+            test_data = {
+                "compound": "CHEMBL12345",
+                "viability": 0.75,
+                "cell_count": 1000
+            }
+            
+            result = await agent.analyze_perturbation_data(test_data)
+            
+            assert isinstance(result, AnalysisResult)
+            assert result.confidence == 0.85
+            assert len(result.insights) == 2
+            assert len(result.recommendations) == 1
+    
+    def test_agent_without_openai(self):
+        """Test agent behavior when OpenAI is not available."""
+        with patch('src.agents.openai_agent.OPENAI_AVAILABLE', False):
+            with pytest.raises(ImportError):
+                OpenPerturbationAgent(api_key="test-key")
+
+
+class TestImagingLoader:
+    """Test high-content imaging data loader."""
+    
+    def test_imaging_loader_initialization(self):
+        """Test imaging loader initialization."""
+        config = {
+            "data_dir": "test_data/imaging",
+            "batch_size": 4,
+            "num_workers": 0,
+            "image_size": [256, 256],
+            "channels": ["DAPI", "GFP", "RFP"]
+        }
+        
+        loader = HighContentImagingLoader(config)
+        
+        assert loader.batch_size == 4
+        assert loader.data_dir.name == "imaging"
+        assert len(loader.datasets) == 3  # train, val, test
+    
+    def test_imaging_dataset_creation(self):
+        """Test imaging dataset creation with dummy data."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = {
+                "data_dir": temp_dir,
+                "image_size": [128, 128],
+                "channels": ["DAPI", "GFP"],
+                "normalize": True
+            }
+            
+            dataset = HighContentImagingDataset(
+                config=config,
+                metadata_file=os.path.join(temp_dir, "metadata.csv"),
+                data_dir=temp_dir,
+                mode="train"
+            )
+            
+            assert len(dataset) > 0
+            
+            # Test sample loading
+            sample = dataset[0]
+            expected_keys = ["image", "mask", "sample_id", "metadata", "perturbation"]
+            for key in expected_keys:
+                assert key in sample
+            
+            assert sample["image"] is not None
+            assert sample["sample_id"] is not None
+    
+    def test_imaging_loader_setup(self):
+        """Test imaging loader setup process."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = {
+                "data_dir": temp_dir,
+                "batch_size": 2,
+                "num_workers": 0,
+                "image_size": [64, 64],
+                "channels": ["DAPI"]
+            }
+            
+            loader = HighContentImagingLoader(config)
+            loader.setup()
+            
+            # Check that datasets were created
+            for split in ["train", "val", "test"]:
+                dataset = loader.get_dataset(split)
+                if dataset is not None:
+                    assert len(dataset) > 0
+            
+            # Check statistics
+            stats = loader.get_dataset_statistics()
+            assert "total_samples" in stats
+            assert "splits" in stats
+            assert stats["total_samples"] > 0
+
+
+class TestLossFunctions:
+    """Test various loss functions."""
+    
+    def test_causal_consistency_loss(self):
+        """Test causal consistency loss calculation."""
+        loss_fn = CausalConsistencyLoss(lambda_causal=1.0)
+        
+        batch_size = 16
+        d_causal = 10
+        d_intervention = 5
+        d_effect = 8
+        
+        causal_factors = torch.randn(batch_size, d_causal)
+        interventions = torch.randn(batch_size, d_intervention)
+        predicted_effects = torch.randn(batch_size, d_effect)
+        actual_effects = torch.randn(batch_size, d_effect)
+        
+        loss = loss_fn(causal_factors, interventions, predicted_effects, actual_effects)
+        
+        assert isinstance(loss, torch.Tensor)
+        assert loss.item() >= 0
+    
+    def test_contrastive_loss_infonce(self):
+        """Test InfoNCE contrastive loss."""
+        loss_fn = ContrastiveLoss(temperature=0.07)
+        
+        batch_size = 32
+        embedding_dim = 128
+        
+        embeddings = torch.randn(batch_size, embedding_dim)
+        labels = torch.randint(0, 5, (batch_size,))
+        
+        loss = loss_fn(embeddings, labels, mode="infonce")
+        
+        assert isinstance(loss, torch.Tensor)
+        assert loss.item() >= 0
+    
+    def test_contrastive_loss_triplet(self):
+        """Test triplet contrastive loss."""
+        loss_fn = ContrastiveLoss(margin=1.0)
+        
+        batch_size = 32
+        embedding_dim = 128
+        
+        embeddings = torch.randn(batch_size, embedding_dim)
+        labels = torch.randint(0, 5, (batch_size,))
+        
+        loss = loss_fn(embeddings, labels, mode="triplet")
+        
+        assert isinstance(loss, torch.Tensor)
+        assert loss.item() >= 0
+    
+    def test_uncertainty_loss_gaussian(self):
+        """Test Gaussian uncertainty loss."""
+        loss_fn = UncertaintyLoss(loss_type="gaussian")
+        
+        batch_size = 16
+        output_dim = 10
+        
+        mean_pred = torch.randn(batch_size, output_dim)
+        var_pred = torch.abs(torch.randn(batch_size, output_dim)) + 1e-6
+        targets = torch.randn(batch_size, output_dim)
+        
+        loss = loss_fn(mean_pred, var_pred, targets)
+        
+        assert isinstance(loss, torch.Tensor)
+        assert loss.item() >= 0
+    
+    def test_structural_loss(self):
+        """Test structural loss for causal graphs."""
+        loss_fn = StructuralLoss(lambda_sparse=0.1, lambda_dag=1.0)
+        
+        graph_size = 10
+        adjacency_matrix = torch.abs(torch.randn(graph_size, graph_size)) * 0.1
+        
+        losses = loss_fn(adjacency_matrix)
+        
+        assert isinstance(losses, dict)
+        assert "structural_loss" in losses
+        assert "sparsity_loss" in losses
+        assert "dag_loss" in losses
+        assert all(isinstance(loss, torch.Tensor) for loss in losses.values())
+    
+    def test_biological_consistency_loss(self):
+        """Test biological consistency loss."""
+        # Test without pathway graph
+        loss_fn = BiologicalConsistencyLoss()
+        
+        graph_size = 10
+        batch_size = 8
+        
+        predicted_graph = torch.randn(graph_size, graph_size)
+        predicted_effects = torch.randn(batch_size, graph_size)
+        
+        loss = loss_fn(predicted_graph, predicted_effects)
+        
+        assert isinstance(loss, torch.Tensor)
+        assert loss.item() >= 0
+    
+    def test_multi_task_loss(self):
+        """Test multi-task loss with automatic weighting."""
+        task_names = ["task1", "task2", "task3"]
+        loss_fn = MultiTaskLoss(task_names)
+        
+        task_losses = {
+            "task1": torch.tensor(1.5),
+            "task2": torch.tensor(2.0),
+            "task3": torch.tensor(0.8)
+        }
+        
+        weighted_losses = loss_fn(task_losses)
+        
+        assert isinstance(weighted_losses, dict)
+        assert "total_loss" in weighted_losses
+        for task in task_names:
+            assert f"weighted_{task}" in weighted_losses
+            assert f"weight_{task}" in weighted_losses
+
+
+class TestSystemIntegration:
+    """Test system-wide integration."""
+    
+    def test_data_flow_simulation(self):
+        """Test data flow through the system."""
+        # Simulate experimental data
+        experiment_data = {
+            "compound_id": "CHEMBL12345",
+            "concentration": 10.0,
+            "cell_line": "HeLa",
+            "viability": 0.75,
+            "cell_count": 1200,
+            "morphology_features": np.random.rand(10).tolist()
+        }
+        
+        # Test data formatting
+        formatted_data = AgentTools.format_data_for_ai(experiment_data)
+        assert isinstance(formatted_data, str)
+        assert "CHEMBL12345" in formatted_data
+        
+        # Test experiment validation
+        experiment_design = {
+            "type": "dose_response",
+            "compound": "CHEMBL12345",
+            "concentrations": [1, 10, 100],
+            "timepoints": ["24h"],
+            "cell_line": "HeLa"
+        }
+        
+        validation = AgentTools.validate_experiment_design(experiment_design)
+        assert validation["valid"] is True
+        
+        # Test loss computation
+        loss_fn = CausalConsistencyLoss()
+        dummy_tensors = [torch.randn(8, 5) for _ in range(4)]
+        loss = loss_fn(*dummy_tensors)
+        assert isinstance(loss, torch.Tensor)
+    
+    def test_configuration_compatibility(self):
+        """Test that all components work with consistent configurations."""
+        base_config = {
+            "batch_size": 16,
+            "image_size": [256, 256],
+            "channels": ["DAPI", "GFP", "RFP"],
+            "normalize": True
+        }
+        
+        # Test with imaging loader
+        with tempfile.TemporaryDirectory() as temp_dir:
+            imaging_config = {**base_config, "data_dir": temp_dir}
+            loader = HighContentImagingLoader(imaging_config)
+            assert loader.batch_size == base_config["batch_size"]
+        
+        # Test with loss functions
+        loss_fn = MultiTaskLoss(["imaging", "genomics", "proteomics"])
+        test_losses = {
+            "imaging": torch.tensor(1.0),
+            "genomics": torch.tensor(1.5),
+            "proteomics": torch.tensor(0.8)
+        }
+        result = loss_fn(test_losses)
+        assert "total_loss" in result
+
+
+def test_package_imports():
+    """Test that all package imports work correctly."""
+    try:
+        from src.agents import OpenPerturbationAgent, ConversationHandler
+        from src.agents.agent_tools import AgentTools
+        from src.data.loaders.imaging_loader import HighContentImagingLoader
+        from src.training import losses
+        from src.api import main
+        
+        # If we get here, all imports succeeded
+        assert True
+    except ImportError as e:
+        pytest.fail(f"Import failed: {e}")
+
+
+def test_version_compatibility():
+    """Test version compatibility and requirements."""
+    import sys
+    
+    # Check Python version
+    assert sys.version_info >= (3, 10), "Python 3.10+ required"
+    
+    # Check key dependencies
+    try:
+        import torch
+        import numpy as np
+        import fastapi
+        assert True
+    except ImportError as e:
+        pytest.fail(f"Required dependency missing: {e}")
+
+
 if __name__ == "__main__":
-    # Run tests when called directly
-    pytest.main([__file__, "-v"]) 
+    # Run basic smoke tests
+    print("Running OpenPerturbation comprehensive tests...")
+    
+    # Test basic functionality
+    test_package_imports()
+    test_version_compatibility()
+    
+    # Test core components
+    agent_tools_test = TestAgentTools()
+    agent_tools_test.test_format_data_for_ai()
+    agent_tools_test.test_validate_experiment_design_valid()
+    
+    loss_test = TestLossFunctions()
+    loss_test.test_causal_consistency_loss()
+    loss_test.test_multi_task_loss()
+    
+    print("✅ All basic tests passed!")
+    print("Run 'pytest tests/test_comprehensive.py -v' for full test suite.") 

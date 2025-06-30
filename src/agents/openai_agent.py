@@ -1,328 +1,590 @@
 """
-OpenAI-powered agents for perturbation analysis.
+OpenAI Agent for Perturbation Biology Analysis
+Author: Nik Jois <nikjois@llamasearch.ai>
 
-Author: Nik Jois
-Email: nikjois@llamasearch.ai
+This module implements an AI-powered agent using OpenAI's GPT models to analyze
+perturbation biology experiments, suggest follow-up studies, and generate protocols.
 """
 
-import logging
+import json
 import asyncio
-from typing import Dict, List, Optional, Any, Union
-import numpy as np
-import pandas as pd
-import os
-from pathlib import Path
+import logging
+from typing import Dict, List, Any, Optional, Union
+from dataclasses import dataclass
+from datetime import datetime
 
-# OpenAI imports
 try:
-    from openai import OpenAI
+    from openai import OpenAI, AsyncOpenAI
     from openai.types.chat import ChatCompletionMessageParam
     OPENAI_AVAILABLE = True
 except ImportError:
-    OpenAI = None
-    ChatCompletionMessageParam = None
     OPENAI_AVAILABLE = False
+    OpenAI = None
+    AsyncOpenAI = None
+    ChatCompletionMessageParam = Dict[str, Any]
 
-from .agent_tools import PerturbationAnalysisTools
-
-try:
-    from dotenv import load_dotenv
-    # Load .env from project root
-    _env_path = Path(__file__).resolve().parents[2] / '.env'
-    if _env_path.exists():
-        load_dotenv(_env_path)
-except Exception:
-    # dotenv is optional; ignore errors silently
-    pass
+from .conversation_handler import ConversationHandler
+from .agent_tools import AgentTools
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class AnalysisResult:
+    """Result of AI analysis."""
+    analysis: Dict[str, Any]
+    insights: List[str]
+    recommendations: List[str]
+    confidence: float
+    timestamp: datetime
+
+
+@dataclass
+class ExperimentSuggestion:
+    """AI-generated experiment suggestion."""
+    experiment_type: str
+    parameters: Dict[str, Any]
+    rationale: str
+    priority: str
+    estimated_duration: str
+    required_resources: List[str]
+
+
 class OpenPerturbationAgent:
-    """Base class for OpenAI-powered perturbation analysis agents."""
+    """
+    AI agent for perturbation biology analysis using OpenAI's language models.
     
+    This agent can:
+    - Analyze experimental data and provide insights
+    - Suggest follow-up experiments
+    - Generate detailed protocols
+    - Provide scientific explanations and interpretations
+    """
+
     def __init__(
-        self, api_key: Optional[str] = None, model: str = "gpt-4", temperature: float = 0.1
+        self,
+        api_key: str,
+        model: str = "gpt-4",
+        temperature: float = 0.7,
+        max_tokens: int = 2000,
+        timeout: int = 30
     ):
-        """Initialize the OpenAI agent."""
+        """
+        Initialize the OpenPerturbation AI agent.
+        
+        Args:
+            api_key: OpenAI API key
+            model: GPT model to use (gpt-4, gpt-3.5-turbo, etc.)
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens in response
+            timeout: Request timeout in seconds
+        """
         if not OPENAI_AVAILABLE:
             raise ImportError("OpenAI package not available. Install with: pip install openai")
-
-        # Retrieve API key from parameter, environment variable, or .env file in that priority
-        _env_key = os.getenv('OPENAI_API_KEY')
-        api_key_final = api_key or _env_key
-
-        if api_key_final and OpenAI is not None:
-            self.client = OpenAI(api_key=api_key_final)
-        else:
-            self.client = None
-            logger.warning("OpenAI API key not found. Agent will run in mock mode. Set OPENAI_API_KEY in environment or .env file.")
-            
+        
+        self.api_key = api_key
         self.model = model
         self.temperature = temperature
-        self.tools = PerturbationAnalysisTools()
-
-    async def analyze_data(
-        self, data_description: str, analysis_type: str = "comprehensive"
-    ) -> Dict[str, Any]:
-        """Analyze perturbation data using OpenAI."""
+        self.max_tokens = max_tokens
+        self.timeout = timeout
         
-        if not self.client:
-            return self._mock_analysis_response(data_description, analysis_type)
+        # Initialize OpenAI clients
+        if OPENAI_AVAILABLE and OpenAI is not None and AsyncOpenAI is not None:
+            self.client = OpenAI(api_key=api_key, timeout=timeout)
+            self.async_client = AsyncOpenAI(api_key=api_key, timeout=timeout)
+        else:
+            raise ImportError("OpenAI package not available. Install with: pip install openai")
+        
+        # Initialize conversation handler - start a conversation
+        self.conversation_handler = ConversationHandler()
+        self.conversation_id = self.conversation_handler.start_conversation(
+            user_id="agent_user", 
+            agent_type="perturbation_analysis"
+        )
+        
+        # System prompt for perturbation biology context
+        self.system_prompt = """
+        You are an expert AI assistant specializing in perturbation biology, cellular assays, 
+        and high-content screening. Your role is to analyze experimental data, provide scientific 
+        insights, and suggest follow-up experiments.
+        
+        Key capabilities:
+        - Analyze high-content imaging data
+        - Interpret genomics/transcriptomics results
+        - Assess compound toxicity and efficacy
+        - Design follow-up experiments
+        - Generate detailed protocols
+        - Explain biological mechanisms
+        
+        Always provide scientifically accurate, evidence-based responses with appropriate 
+        confidence levels. When suggesting experiments, consider cost, feasibility, and 
+        scientific value.
+        """
+        
+        logger.info(f"Initialized OpenPerturbation Agent with model {model}")
 
+    async def analyze_perturbation_data(
+        self,
+        data: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+        query: Optional[str] = None
+    ) -> AnalysisResult:
+        """
+        Analyze perturbation experiment data using AI.
+        
+        Args:
+            data: Experimental data to analyze
+            context: Additional context about the experiment
+            query: Specific question about the data
+            
+        Returns:
+            AnalysisResult with AI insights and recommendations
+        """
         try:
-            # Create properly formatted messages
-            messages: List[ChatCompletionMessageParam] = [
-                {
-                    "role": "system",
-                    "content": "You are an expert in perturbation biology and data analysis. Provide detailed, scientific analysis of biological data."
-                },
-                {
-                    "role": "user", 
-                    "content": f"Analyze this perturbation data: {data_description}. Analysis type: {analysis_type}"
-                }
-            ]
-
-            response = self.client.chat.completions.create(
-                model=self.model, messages=messages, temperature=self.temperature, max_tokens=2000
+            # Format data for AI consumption
+            formatted_data = AgentTools.format_data_for_ai(data)
+            
+            # Build analysis prompt
+            prompt = self._build_analysis_prompt(formatted_data, context, query)
+            
+            # Get AI response
+            response = await self._get_ai_response(prompt)
+            
+            # Parse response
+            parsed_response = self._parse_analysis_response(response)
+            
+            # Create result object
+            result = AnalysisResult(
+                analysis=parsed_response.get("analysis", {}),
+                insights=parsed_response.get("insights", []),
+                recommendations=parsed_response.get("recommendations", []),
+                confidence=parsed_response.get("confidence", 0.8),
+                timestamp=datetime.now()
             )
-
-            analysis_plan = response.choices[0].message.content
-
-            return {
-                "analysis_plan": analysis_plan,
-                "analysis_type": analysis_type,
-                "confidence": 0.85,
-                "estimated_runtime": self._estimate_runtime(analysis_type),
-                "recommendations": analysis_plan.split('\n')[-3:] if analysis_plan else []
-            }
-
+            
+            # Store in conversation history
+            self.conversation_handler.add_message(
+                self.conversation_id, 
+                "user", 
+                f"Analyze data: {formatted_data}"
+            )
+            self.conversation_handler.add_message(
+                self.conversation_id,
+                "assistant", 
+                json.dumps(parsed_response)
+            )
+            
+            logger.info(f"Completed data analysis with confidence {result.confidence}")
+            return result
+            
         except Exception as e:
-            logger.error(f"OpenAI analysis failed: {e}")
-            return self._mock_analysis_response(data_description, analysis_type)
+            logger.error(f"Error in data analysis: {e}")
+            raise
 
-    async def interpret_results(self, results: Dict[str, Any], context: str = "") -> Dict[str, Any]:
-        """Interpret analysis results using OpenAI."""
+    async def suggest_follow_up_experiments(
+        self,
+        data: Dict[str, Any],
+        current_results: Optional[AnalysisResult] = None,
+        constraints: Optional[Dict[str, Any]] = None
+    ) -> List[ExperimentSuggestion]:
+        """
+        Generate AI-powered follow-up experiment suggestions.
         
-        if not self.client:
-            return self._mock_interpretation_response(results, context)
-
+        Args:
+            data: Current experimental data
+            current_results: Previous analysis results
+            constraints: Budget, time, or resource constraints
+            
+        Returns:
+            List of experiment suggestions
+        """
         try:
-            # Create properly formatted messages  
-            messages: List[ChatCompletionMessageParam] = [
-                {
-                    "role": "system",
-                    "content": "You are an expert in interpreting biological analysis results. Provide clear, actionable insights."
-                },
-                {
-                    "role": "user",
-                    "content": f"Interpret these results: {str(results)[:1000]}. Context: {context}"
-                }
-            ]
-
-            response = self.client.chat.completions.create(
-                model=self.model, messages=messages, temperature=self.temperature, max_tokens=2000
-            )
-
-            interpretation = response.choices[0].message.content
-
-            return {
-                "interpretation": interpretation,
-                "key_findings": self._extract_key_findings(results),
-                "confidence": self._assess_confidence(results),
-                "next_steps": self._generate_followup_recommendations(results),
-                "biological_significance": interpretation
-            }
-
+            # Build suggestion prompt
+            prompt = self._build_suggestion_prompt(data, current_results, constraints)
+            
+            # Get AI response
+            response = await self._get_ai_response(prompt)
+            
+            # Parse suggestions
+            suggestions_data = self._parse_suggestions_response(response)
+            
+            # Convert to ExperimentSuggestion objects
+            suggestions = []
+            for suggestion in suggestions_data.get("experiments", []):
+                exp_suggestion = ExperimentSuggestion(
+                    experiment_type=suggestion.get("type", "unknown"),
+                    parameters=suggestion.get("parameters", {}),
+                    rationale=suggestion.get("rationale", ""),
+                    priority=suggestion.get("priority", "medium"),
+                    estimated_duration=suggestion.get("duration", "1-2 weeks"),
+                    required_resources=suggestion.get("resources", [])
+                )
+                suggestions.append(exp_suggestion)
+            
+            logger.info(f"Generated {len(suggestions)} experiment suggestions")
+            return suggestions
+            
         except Exception as e:
-            logger.error(f"OpenAI interpretation failed: {e}")
-            return self._mock_interpretation_response(results, context)
+            logger.error(f"Error generating suggestions: {e}")
+            raise
 
-    def _estimate_runtime(self, analysis_type: str) -> str:
-        """Estimate analysis runtime."""
-        runtime_map = {
-            "comprehensive": "2-4 hours",
-            "quick": "15-30 minutes", 
-            "detailed": "4-8 hours",
-            "exploratory": "1-2 hours"
-        }
-        return runtime_map.get(analysis_type, "1-2 hours")
-
-    def _extract_key_findings(self, results: Dict[str, Any]) -> List[str]:
-        """Extract key findings from results."""
-        findings = []
+    def generate_experiment_protocol(
+        self,
+        experiment_type: str,
+        parameters: Dict[str, Any],
+        detail_level: str = "detailed"
+    ) -> str:
+        """
+        Generate detailed experimental protocol using AI.
         
-        if "upregulated_genes" in results:
-            findings.append(f"Found {len(results['upregulated_genes'])} upregulated genes")
-        if "downregulated_genes" in results:
-            findings.append(f"Found {len(results['downregulated_genes'])} downregulated genes")
-        if "significant_pathways" in results:
-            findings.append(f"Identified {len(results['significant_pathways'])} significant pathways")
+        Args:
+            experiment_type: Type of experiment (dose_response, time_course, etc.)
+            parameters: Experiment parameters
+            detail_level: Level of detail (basic, detailed, comprehensive)
             
-        return findings or ["No significant findings detected"]
-
-    def _assess_confidence(self, results: Dict[str, Any]) -> float:
-        """Assess confidence in results."""
-        confidence_factors = []
-        
-        if "p_values" in results:
-            p_vals = results["p_values"]
-            if isinstance(p_vals, list) and p_vals:
-                confidence_factors.append(float(1.0 - np.mean(p_vals)))
-        
-        if "num_samples" in results:
-            sample_factor = min(1.0, results["num_samples"] / 100)
-            confidence_factors.append(float(sample_factor))
+        Returns:
+            Formatted protocol text
+        """
+        try:
+            prompt = self._build_protocol_prompt(experiment_type, parameters, detail_level)
             
-        return float(np.mean(confidence_factors)) if confidence_factors else 0.7
-
-    def _generate_followup_recommendations(self, results: Dict[str, Any]) -> List[str]:
-        """Generate follow-up recommendations."""
-        recommendations = []
-        
-        if "upregulated_genes" in results and len(results["upregulated_genes"]) > 5:
-            recommendations.append("Validate upregulated genes with qPCR")
-        if "significant_pathways" in results:
-            recommendations.append("Perform pathway-specific functional assays")
-        if "predicted_targets" in results:
-            recommendations.append("Test predicted drug targets experimentally")
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,  # Lower temperature for more consistent protocols
+                max_tokens=self.max_tokens
+            )
             
-        return recommendations or ["Perform additional validation experiments"]
+            protocol = response.choices[0].message.content or ""
+            
+            # Store in conversation history
+            self.conversation_handler.add_message(
+                self.conversation_id,
+                "user", 
+                f"Generate protocol: {experiment_type}"
+            )
+            self.conversation_handler.add_message(
+                self.conversation_id,
+                "assistant", 
+                protocol
+            )
+            
+            logger.info(f"Generated {experiment_type} protocol")
+            return protocol
+            
+        except Exception as e:
+            logger.error(f"Error generating protocol: {e}")
+            raise
 
-    def _mock_analysis_response(self, data_description: str, analysis_type: str) -> Dict[str, Any]:
-        """Mock response when OpenAI is not available."""
-        return {
-            "analysis_plan": f"Mock analysis of {data_description} using {analysis_type} approach",
-            "analysis_type": analysis_type,
-            "confidence": 0.5,
-            "estimated_runtime": self._estimate_runtime(analysis_type),
-            "recommendations": ["Validate results", "Perform controls", "Replicate experiments"]
-        }
-
-    def _mock_interpretation_response(self, results: Dict[str, Any], context: str) -> Dict[str, Any]:
-        """Mock interpretation when OpenAI is not available."""
-        return {
-            "interpretation": f"Mock interpretation of results in context: {context}",
-            "key_findings": self._extract_key_findings(results),
-            "confidence": self._assess_confidence(results),
-            "next_steps": self._generate_followup_recommendations(results),
-            "biological_significance": "Moderate biological significance detected"
-        }
-
-
-class AnalysisAgent(OpenPerturbationAgent):
-    """Specialized agent for data analysis tasks."""
-    
-    def __init__(self, **kwargs):
-        """Initialize analysis agent."""
-        super().__init__(**kwargs)
-        self.analysis_history = []
-
-    async def recommend_preprocessing(self, data_info: Dict[str, Any]) -> Dict[str, Any]:
-        """Recommend preprocessing steps for data."""
-        
-        recommendations = {
-            "normalization": "Apply quantile normalization for gene expression data",
-            "filtering": "Remove genes with low expression across all samples",
-            "batch_correction": "Apply ComBat for batch effect correction if needed",
-            "quality_control": "Remove outlier samples based on PCA analysis"
-        }
-        
-        if data_info.get("data_type") == "imaging":
-            recommendations.update({
-                "image_preprocessing": "Apply intensity normalization and background subtraction",
-                "segmentation": "Use watershed algorithm for cell segmentation",
-                "feature_extraction": "Extract morphological and intensity features"
-            })
-        elif data_info.get("data_type") == "molecular":
-            recommendations.update({
-                "descriptor_calculation": "Calculate molecular descriptors and fingerprints",
-                "scaffold_analysis": "Perform Murcko scaffold analysis",
-                "similarity_analysis": "Calculate Tanimoto similarity matrices"
-            })
-        
-        confidence = 0.8 if data_info.get("num_samples", 0) > 50 else 0.6
-        
-        return {
-            "preprocessing_steps": recommendations,
-            "confidence": confidence,
-            "estimated_time": "30-60 minutes",
-            "priority_order": list(recommendations.keys())
-        }
-
-
-class ExperimentDesignAgent(OpenPerturbationAgent):
-    """Specialized agent for experimental design."""
-    
-    def __init__(self, **kwargs):
-        """Initialize experiment design agent."""
-        super().__init__(**kwargs)
-        self.design_history = []
-
-    async def design_experiment(
-        self, objectives: List[str], constraints: Dict[str, Any], budget: float = 10000.0
+    async def explain_biological_mechanism(
+        self,
+        perturbation: str,
+        observed_effects: List[str],
+        cell_type: str = "general"
     ) -> Dict[str, Any]:
-        """Design optimal experiments based on objectives and constraints."""
+        """
+        Explain the biological mechanism behind observed perturbation effects.
         
-        # Estimate costs and timeline
-        estimated_cost = budget * 0.8  # Use 80% of budget
-        timeline = self._estimate_timeline(constraints)
+        Args:
+            perturbation: Type of perturbation (compound, gene knockdown, etc.)
+            observed_effects: List of observed phenotypic effects
+            cell_type: Cell type context
+            
+        Returns:
+            Mechanism explanation with pathways and targets
+        """
+        try:
+            prompt = f"""
+            Explain the biological mechanism for the following perturbation:
+            
+            Perturbation: {perturbation}
+            Cell Type: {cell_type}
+            Observed Effects: {', '.join(observed_effects)}
+            
+            Please provide:
+            1. Most likely molecular targets
+            2. Affected biological pathways
+            3. Mechanism of action
+            4. Supporting evidence from literature
+            5. Confidence in the explanation
+            
+            Format as JSON with appropriate sections.
+            """
+            
+            response = await self._get_ai_response(prompt)
+            mechanism = self._parse_json_response(response)
+            
+            logger.info(f"Generated mechanism explanation for {perturbation}")
+            return mechanism
+            
+        except Exception as e:
+            logger.error(f"Error explaining mechanism: {e}")
+            raise
+
+    async def chat_with_agent(self, message: str, context: Optional[Dict] = None) -> str:
+        """
+        Have a conversational interaction with the AI agent.
         
-        # Generate experimental conditions
-        conditions = []
-        for i, objective in enumerate(objectives[:5]):  # Limit to 5 objectives
-            conditions.append({
-                "condition_id": f"exp_{i+1}",
-                "objective": objective,
-                "treatment": f"Treatment_{i+1}",
-                "controls": ["Vehicle", "Untreated"],
-                "replicates": 3,
-                "timepoints": ["6h", "24h", "48h"],
-                "estimated_cost": estimated_cost / len(objectives)
-            })
+        Args:
+            message: User message
+            context: Optional context information
+            
+        Returns:
+            Agent response
+        """
+        try:
+            # Update context if provided
+            if context:
+                self.conversation_handler.update_context(self.conversation_id, context)
+            
+            # Add user message to history
+            self.conversation_handler.add_message(self.conversation_id, "user", message)
+            
+            # Build conversation prompt using history
+            conversation_history = self.conversation_handler.get_conversation_history(self.conversation_id)
+            
+            # Get AI response
+            response = await self._get_ai_response(
+                message,
+                conversation_history=conversation_history
+            )
+            
+            # Add response to history
+            self.conversation_handler.add_message(self.conversation_id, "assistant", response)
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error in chat interaction: {e}")
+            raise
+
+    async def _get_ai_response(
+        self,
+        prompt: str,
+        conversation_history: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
+        """Get response from OpenAI API."""
+        messages: List[ChatCompletionMessageParam] = [
+            {"role": "system", "content": self.system_prompt}
+        ]
         
-        return {
-            "experimental_design": {
-                "conditions": conditions,
-                "total_experiments": len(conditions) * 3 * 3,  # conditions * replicates * timepoints
-                "estimated_cost": estimated_cost,
-                "timeline_weeks": timeline,
-                "success_probability": 0.75
+        # Add conversation history if provided
+        if conversation_history:
+            for msg in conversation_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role in ["user", "assistant", "system"]:
+                    messages.append({"role": role, "content": content})
+        
+        # Add current prompt
+        messages.append({"role": "user", "content": prompt})
+        
+        response = await self.async_client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens
+        )
+        
+        return response.choices[0].message.content or ""
+
+    def _build_analysis_prompt(
+        self,
+        data: str,
+        context: Optional[Dict[str, Any]] = None,
+        query: Optional[str] = None
+    ) -> str:
+        """Build prompt for data analysis."""
+        prompt = f"""
+        Analyze the following perturbation biology data:
+        
+        Data:
+        {data}
+        """
+        
+        if context:
+            prompt += f"\nContext: {json.dumps(context, indent=2)}"
+        
+        if query:
+            prompt += f"\nSpecific Question: {query}"
+        
+        prompt += """
+        
+        Please provide a comprehensive analysis including:
+        1. Summary of key findings
+        2. Biological insights and interpretations
+        3. Statistical significance assessment
+        4. Potential confounding factors
+        5. Recommendations for follow-up
+        6. Confidence level (0.0-1.0)
+        
+        Format the response as JSON with the following structure:
+        {
+            "analysis": {
+                "summary": "...",
+                "key_findings": ["...", "..."],
+                "statistical_assessment": "..."
             },
-            "recommendations": [
-                "Include appropriate controls for each condition",
-                "Randomize sample processing to avoid batch effects", 
-                "Plan for interim analysis at 50% completion"
-            ],
-            "risk_assessment": {
-                "technical_risk": "Medium",
-                "timeline_risk": "Low",
-                "budget_risk": "Low"
-            }
+            "insights": ["...", "..."],
+            "recommendations": ["...", "..."],
+            "confidence": 0.85
         }
-
-    def _estimate_timeline(self, constraints: Dict[str, Any]) -> int:
-        """Estimate experiment timeline in weeks."""
-        base_timeline = 8  # Base 8 weeks
+        """
         
-        if constraints.get("complexity", "medium") == "high":
-            base_timeline += 4
-        if constraints.get("sample_size", 100) > 500:
-            base_timeline += 2
-        if constraints.get("num_conditions", 5) > 10:
-            base_timeline += 3
-            
-        return min(base_timeline, 20)  # Cap at 20 weeks
+        return prompt
+
+    def _build_suggestion_prompt(
+        self,
+        data: Dict[str, Any],
+        results: Optional[AnalysisResult] = None,
+        constraints: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Build prompt for experiment suggestions."""
+        prompt = f"""
+        Based on the experimental data and analysis, suggest follow-up experiments:
+        
+        Current Data: {json.dumps(data, indent=2)}
+        """
+        
+        if results:
+            prompt += f"\nPrevious Analysis: {json.dumps(results.analysis, indent=2)}"
+        
+        if constraints:
+            prompt += f"\nConstraints: {json.dumps(constraints, indent=2)}"
+        
+        prompt += """
+        
+        Suggest 2-4 follow-up experiments that would:
+        1. Validate current findings
+        2. Extend understanding
+        3. Address limitations
+        4. Provide mechanistic insights
+        
+        Format as JSON:
+        {
+            "experiments": [
+                {
+                    "type": "dose_response",
+                    "parameters": {...},
+                    "rationale": "...",
+                    "priority": "high|medium|low",
+                    "duration": "1-2 weeks",
+                    "resources": ["equipment", "reagents"]
+                }
+            ]
+        }
+        """
+        
+        return prompt
+
+    def _build_protocol_prompt(
+        self,
+        experiment_type: str,
+        parameters: Dict[str, Any],
+        detail_level: str
+    ) -> str:
+        """Build prompt for protocol generation."""
+        return f"""
+        Generate a {detail_level} experimental protocol for:
+        
+        Experiment Type: {experiment_type}
+        Parameters: {json.dumps(parameters, indent=2)}
+        
+        Include:
+        1. Objective and hypothesis
+        2. Materials and reagents
+        3. Equipment required
+        4. Step-by-step procedure
+        5. Quality control measures
+        6. Data analysis plan
+        7. Expected timeline
+        8. Troubleshooting tips
+        
+        Format as clear, executable protocol.
+        """
+
+    def _parse_analysis_response(self, response: str) -> Dict[str, Any]:
+        """Parse AI analysis response."""
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            # Fallback parsing if JSON is malformed
+            return {
+                "analysis": {"summary": response[:500]},
+                "insights": [],
+                "recommendations": [],
+                "confidence": 0.7
+            }
+
+    def _parse_suggestions_response(self, response: str) -> Dict[str, Any]:
+        """Parse AI suggestions response."""
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            return {"experiments": []}
+
+    def _parse_json_response(self, response: str) -> Dict[str, Any]:
+        """Parse general JSON response."""
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            return {"response": response, "parsed": False}
+
+    def get_conversation_summary(self) -> Dict[str, Any]:
+        """Get summary of conversation with agent."""
+        return self.conversation_handler.get_conversation_summary(self.conversation_id)
+
+    def reset_conversation(self):
+        """Reset conversation history."""
+        self.conversation_handler.end_conversation(self.conversation_id)
+        self.conversation_id = self.conversation_handler.start_conversation(
+            user_id="agent_user", 
+            agent_type="perturbation_analysis"
+        )
+        logger.info("Reset conversation history")
+
+    def set_model_parameters(
+        self,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        model: Optional[str] = None
+    ):
+        """Update model parameters."""
+        if temperature is not None:
+            self.temperature = temperature
+        if max_tokens is not None:
+            self.max_tokens = max_tokens
+        if model is not None:
+            self.model = model
+        
+        logger.info(f"Updated model parameters: {self.model}, temp={self.temperature}")
 
 
-def create_agent(agent_type: str = "general", **kwargs) -> OpenPerturbationAgent:
-    """Factory function to create different types of agents."""
-    
-    agent_classes = {
-        "general": OpenPerturbationAgent,
-        "analysis": AnalysisAgent,
-        "experiment_design": ExperimentDesignAgent
-    }
-    
-    agent_class = agent_classes.get(agent_type, OpenPerturbationAgent)
-    return agent_class(**kwargs)
+# Convenience functions for quick access
+async def analyze_data_with_ai(data: Dict[str, Any], api_key: str) -> AnalysisResult:
+    """Quick function to analyze data with AI."""
+    agent = OpenPerturbationAgent(api_key=api_key)
+    return await agent.analyze_perturbation_data(data)
+
+
+async def get_experiment_suggestions(
+    data: Dict[str, Any],
+    api_key: str,
+    constraints: Optional[Dict] = None
+) -> List[ExperimentSuggestion]:
+    """Quick function to get experiment suggestions."""
+    agent = OpenPerturbationAgent(api_key=api_key)
+    return await agent.suggest_follow_up_experiments(data, constraints=constraints)
+
+
+def generate_protocol(
+    experiment_type: str,
+    parameters: Dict[str, Any],
+    api_key: str
+) -> str:
+    """Quick function to generate protocol."""
+    agent = OpenPerturbationAgent(api_key=api_key)
+    return agent.generate_experiment_protocol(experiment_type, parameters)
