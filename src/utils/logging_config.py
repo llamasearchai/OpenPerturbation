@@ -268,12 +268,16 @@ def setup_structured_logging(
     # Configure structured logging
     if enable_json:
         try:
-            from pythonjsonlogger import jsonlogger
-            formatter = jsonlogger.JsonFormatter(
-                '%(timestamp)s %(level)s %(name)s %(message)s'
+            from logging_utilities.formatters.json_formatter import JsonFormatter
+            formatter = JsonFormatter(
+                {
+                    "timestamp": "asctime",
+                    "level": "levelname",
+                    "name": "name",
+                    "message": "message"
+                }
             )
         except ImportError:
-            # Fallback to standard formatter if jsonlogger is not available
             formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )

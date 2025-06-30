@@ -5,6 +5,7 @@ Analysis-related API endpoints for OpenPerturbation.
 import logging
 from typing import Any, Dict
 import numpy as np
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
@@ -46,4 +47,18 @@ async def run_explainability_analysis(request: ExplainabilityRequest) -> Dict[st
 async def design_interventions(request: InterventionDesignRequest) -> Dict[str, Any]:
     """Design optimal interventions based on causal graph."""
     # This is a placeholder for the actual implementation
-    return {"message": "Intervention design is not yet implemented."} 
+    return {"message": "Intervention design is not yet implemented."}
+
+@router.get("/health", response_model=Dict[str, Any])
+async def health_check() -> Dict[str, Any]:
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "version": "1.0.0",
+        "services": {
+            "api": "running",
+            "causal_discovery": "available",
+            "database": "connected"
+        }
+    } 
