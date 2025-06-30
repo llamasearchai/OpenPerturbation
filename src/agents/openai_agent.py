@@ -10,6 +10,8 @@ import asyncio
 from typing import Dict, List, Optional, Any, Union
 import numpy as np
 import pandas as pd
+import os
+from pathlib import Path
 
 # OpenAI imports
 try:
@@ -22,6 +24,16 @@ except ImportError:
     OPENAI_AVAILABLE = False
 
 from .agent_tools import PerturbationAnalysisTools
+
+try:
+    from dotenv import load_dotenv
+    # Load .env from project root
+    _env_path = Path(__file__).resolve().parents[2] / '.env'
+    if _env_path.exists():
+        load_dotenv(_env_path)
+except Exception:
+    # dotenv is optional; ignore errors silently
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +48,15 @@ class OpenPerturbationAgent:
         if not OPENAI_AVAILABLE:
             raise ImportError("OpenAI package not available. Install with: pip install openai")
 
-        if api_key and OpenAI is not None:
-            self.client = OpenAI(api_key=api_key)
+        # Retrieve API key from parameter, environment variable, or .env file in that priority
+        _env_key = os.getenv('OPENAI_API_KEY')
+        api_key_final = api_key or _env_key
+
+        if api_key_final and OpenAI is not None:
+            self.client = OpenAI(api_key=api_key_final)
         else:
             self.client = None
-            logger.warning("No OpenAI API key provided. Agent will run in mock mode.")
+            logger.warning("OpenAI API key not found. Agent will run in mock mode. Set OPENAI_API_KEY in environment or .env file.")
             
         self.model = model
         self.temperature = temperature
