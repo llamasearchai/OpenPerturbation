@@ -183,8 +183,9 @@ class CausalDiscoveryEngine:
         # Handle torch tensor safely
         if TORCH_AVAILABLE and torch is not None:
             try:
-                if hasattr(data, 'detach') and hasattr(data, 'cpu') and hasattr(data, 'numpy'):
-                    data_np = data.detach().cpu().numpy()
+                # Check if this is actually a torch tensor
+                if hasattr(data, 'detach') and hasattr(data, 'cpu') and hasattr(data, 'numpy') and str(type(data)).startswith("<class 'torch."):
+                    data_np = data.detach().cpu().numpy()  # type: ignore
                 else:
                     data_np = np.asarray(data)
             except Exception:
@@ -266,7 +267,8 @@ class CausalDiscoveryEngine:
             lingam_model = DirectLiNGAM()
             lingam_model.fit(X)
             A = lingam_model.adjacency_matrix_
-            return {"adjacency_matrix": A, "confidence_scores": np.abs(A)}
+            confidence_scores = np.abs(A) if A is not None else np.zeros((X.shape[1], X.shape[1]))
+            return {"adjacency_matrix": A, "confidence_scores": confidence_scores}
         except Exception as exc:  # pragma: no cover
             logger.error("LiNGAM failed: %s", exc)
             return self._discover_with_correlation(X)
@@ -645,22 +647,34 @@ def visualize_causal_network(discovery_results: Dict[str, Any],
     pos = nx.spring_layout(G, k=0.8, iterations=50)
 
     # Calculate node sizes and colors safely
-    node_sizes = [300 + 100 * G.out_degree(n) for n in G.nodes]
-    in_degrees = [int(G.in_degree(n)) for n in G.nodes()]
+    node_sizes = []
+    in_degrees = []
+    for n in G.nodes():
+        # Handle NetworkX degree views with type ignores
+        try:
+            out_deg_val = int(dict(G.out_degree())[n])  # type: ignore
+            in_deg_val = int(dict(G.in_degree())[n])  # type: ignore
+        except (KeyError, TypeError):
+            out_deg_val = 0
+            in_deg_val = 0
+        node_sizes.append(300 + 100 * out_deg_val)
+        in_degrees.append(in_deg_val)
     
     nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_sizes, 
-                           node_color=in_degrees, cmap='viridis', alpha=0.9)
+                           node_color=in_degrees, cmap='viridis', alpha=0.9)  # type: ignore
 
-    # Calculate edge widths safely
-    edge_weights = []
-    for u, v in G.edges():
-        weight = A[u, v] if 0 <= u < A.shape[0] and 0 <= v < A.shape[1] else 1.0
-        edge_weights.append(max(0.5, float(weight) * 2))
+    # Calculate edge widths safely - use single width value for all edges
+    try:
+        weights = [A[u, v] for u, v in G.edges() if 0 <= u < A.shape[0] and 0 <= v < A.shape[1]]
+        avg_weight = np.mean(weights) if weights else 0.0
+        edge_width = max(0.5, float(avg_weight) * 2) if avg_weight > 0 else 1.0
+    except Exception:
+        edge_width = 1.0
     
-    nx.draw_networkx_edges(G, pos, ax=ax, width=edge_weights, 
+    nx.draw_networkx_edges(G, pos, ax=ax, width=edge_width, 
                            alpha=0.6, arrowsize=15)
     
-    if variable_names and len(variable_names) >= len(G.nodes()):
+    if variable_names and len(variable_names) >= len(list(G.nodes())):
         labels = {i: name for i, name in enumerate(variable_names) if i in G.nodes()}
         nx.draw_networkx_labels(G, pos, labels=labels, ax=ax, font_size=8)
         

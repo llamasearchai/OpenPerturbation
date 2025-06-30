@@ -218,7 +218,7 @@ def generate_test_report(results: Dict[str, bool]) -> None:
     if passed == total:
         print("COMPLETE: All tests passed!")
     else:
-        print("❌ Some tests failed. Please check the output above.")
+        print("ERROR: Some tests failed. Please check the output above.")
         sys.exit(1)
 
 def main():
