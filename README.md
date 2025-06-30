@@ -33,6 +33,7 @@ OpenPerturbation is a production-ready platform for perturbation biology, causal
 8. [License](#license)
 9. [Citation](#citation)
 10. [Contact](#contact)
+11. [Environment Variables and Secrets](#environment-variables-and-secrets)
 
 ---
 
@@ -161,3 +162,24 @@ We are always looking for talented engineers & researchers passionate about caus
 
 ## About
 See the full project background, vision and architecture in the [About](https://llamasearchai.github.io/OpenPerturbation/about/) section of the documentation.
+
+## Environment Variables and Secrets
+
+OpenPerturbation relies on certain external service API tokens (for example, OpenAI) that **must** be supplied via environment variables. The project uses `python-dotenv` to automatically load variables from a local `.env` file at runtime.
+
+1. Copy `.env.example` to `.env` at the repository root.
+2. Populate the required variables:
+
+```
+OPENAI_API_KEY=sk-...
+```
+
+3. Never commit the `.env` file to version control. The file path is included in `.gitignore`.
+
+At runtime the key is resolved in this order of precedence:
+
+1. Explicit argument passed to `OpenPerturbationAgent`.
+2. `OPENAI_API_KEY` exported in the environment.
+3. `OPENAI_API_KEY` loaded from `.env` via `python-dotenv`.
+
+If no key is detected, the agent will safely switch to mock mode without external calls.
