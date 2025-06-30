@@ -7,7 +7,7 @@ name = "openperturbation"
 version = "1.0.0"
 description = "Open-source platform for perturbation biology, causal discovery and optimal intervention design"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = {text = "MIT"}
 authors = [
     {name = "Nik Jois", email = "nikjois@llamasearch.ai"}
 ]
@@ -88,10 +88,10 @@ Changelog = "https://github.com/llamasearchai/OpenPerturbation/blob/main/CHANGEL
 openperturbation = "src.api.server:main"
 
 [tool.setuptools]
-packages = ["src"]
+package-dir = {"" = "src"}
 
-[tool.setuptools.package-data]
-src = ["py.typed"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.black]
 line-length = 88
