@@ -1,0 +1,61 @@
+name: "MultiModalFusion"
+type: "fusion"
+
+vision:
+  backbone: "vit_base_patch16_224"
+  pretrained: true
+  img_size: 224
+  patch_size: 16
+  num_classes: 0
+  drop_rate: 0.1
+  attn_drop_rate: 0.1
+  add_positional_bias: true
+  use_spatial_attention: true
+  channel_attention: true
+
+genomics:
+  input_dim: 1000
+  hidden_dims: [512, 256, 128]
+  dropout: 0.3
+  normalization: "batch_norm"
+  activation: "gelu"
+  
+molecular:
+  node_features: 128
+  edge_features: 32
+  num_layers: 4
+  hidden_dim: 256
+  readout: "attention"
+  dropout: 0.2
+
+fusion:
+  fusion_method: "cross_attention"
+  hidden_dim: 512
+  num_heads: 8
+  num_layers: 3
+  dropout: 0.1
+  
+  causal_head:
+    hidden_dims: [256, 128]
+    output_dim: 64
+    
+  prediction_head:
+    hidden_dims: [256, 128, 64]
+    output_dim: 1
+    
+  uncertainty_head:
+    hidden_dims: [128, 64]
+    output_dim: 2
+
+training:
+  learning_rate: 0.0001
+  weight_decay: 1e-5
+  scheduler: "cosine"
+  warmup_epochs: 5
+  
+loss_weights:
+  reconstruction: 1.0
+  causal_consistency: 2.0
+  prediction_accuracy: 1.5
+  uncertainty_calibration: 0.5
+  contrastive: 1.0

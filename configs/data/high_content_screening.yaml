@@ -1,0 +1,29 @@
+dataset_name: "high_content_screening"
+data_path: "data/processed"
+raw_data_path: "data/raw"
+
+imaging:
+  num_plates: 10
+  wells_per_plate: 384
+  channels: ["DAPI", "GFP", "RFP", "CY5", "CY7"]
+  img_size: [224, 224]
+  bit_depth: 16
+  
+genomics:
+  num_genes: 1000
+  expression_type: "log2_tpm"
+  normalization: "quantile"
+  
+molecular:
+  compound_library_size: 5000
+  molecular_descriptors: ["morgan_fp", "rdkit_2d", "rdkit_3d"]
+  
+augmentation:
+  horizontal_flip: 0.5
+  vertical_flip: 0.5
+  rotation: 0.3
+  brightness: 0.2
+  contrast: 0.2
+  
+validation_split: 0.2
+test_split: 0.1

@@ -1,0 +1,58 @@
+defaults:
+  - model: multimodal_fusion
+  - data: high_content_screening
+  - experiment: causal_discovery
+  - _self_
+
+project_name: "OpenPerturbations-Platform"
+experiment_name: "Causal-Discovery-HCS"
+seed: 42
+device: "auto"
+
+data:
+  batch_size: 32
+  num_workers: 8
+  pin_memory: true
+  cache_data: true
+  
+training:
+  max_epochs: 100
+  patience: 20
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  precision: "16-mixed"
+  
+validation:
+  check_val_every_n_epoch: 5
+  num_sanity_val_steps: 2
+  
+causal:
+  discovery_method: "pc"
+  significance_level: 0.05
+  max_conditioning_set_size: 3
+  bootstrap_samples: 100
+  
+experimental_design:
+  acquisition_function: "entropy"
+  batch_size: 96
+  budget: 10000
+  exploration_factor: 0.1
+
+logging:
+  wandb:
+    project: "OpenPerturbations-Research"
+    entity: null
+    tags: ["perturbation-biology", "causal-discovery", "drug-discovery"]
+  
+  checkpoint:
+    save_top_k: 3
+    monitor: "val/causal_score"
+    mode: "max"
+  
+  log_every_n_steps: 50
+
+hardware:
+  accelerator: "auto"
+  devices: "auto" 
+  strategy: "auto"
+  num_nodes: 1
