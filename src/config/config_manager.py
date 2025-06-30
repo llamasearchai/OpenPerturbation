@@ -5,13 +5,13 @@ Configuration management for OpenPerturbation.
 import os
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List
+from typing import Dict, Any, Optional, Union, List, cast
 from dataclasses import dataclass, field
 import yaml
 import json
 
 try:
-    from omegaconf import DictConfig, OmegaConf
+    from omegaconf import DictConfig, OmegaConf  # type: ignore
     OMEGACONF_AVAILABLE = True
 except ImportError:
     OMEGACONF_AVAILABLE = False
@@ -114,15 +114,34 @@ class ConfigManager:
     
     def _load_from_file(self) -> None:
         """Load configuration from file."""
+        if not self.config_path:
+            self._load_default_config()
+            return
+            
         try:
-            if OMEGACONF_AVAILABLE and self.config_path.endswith('.yaml'):
-                self.config = OmegaConf.load(self.config_path)
+            if OMEGACONF_AVAILABLE and self.config_path.endswith(('.yaml', '.yml')):
+                loaded_config = OmegaConf.load(self.config_path)
+                if isinstance(loaded_config, (dict, list)):
+                    unboxed_config = OmegaConf.to_container(loaded_config, resolve=True)
+                    if isinstance(unboxed_config, dict):
+                        self.config = cast(Dict[str, Any], unboxed_config)
+                    else:
+                        logger.warning(f"Configuration from {self.config_path} is not a dictionary, using empty config.")
+                        self.config = {}
+                else:
+                    logger.warning(f"YAML file at {self.config_path} did not load as a dictionary or list.")
+                    self.config = {}
+
             else:
-                with open(self.config_path, 'r') as f:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
                     if self.config_path.endswith('.json'):
                         self.config = json.load(f)
-                    else:
+                    elif self.config_path.endswith(('.yaml', '.yml')):
                         self.config = yaml.safe_load(f)
+                    else:
+                        logger.warning(f"Unsupported config file format: {self.config_path}")
+                        self._load_default_config()
+
             logger.info(f"Loaded configuration from {self.config_path}")
         except Exception as e:
             logger.warning(f"Could not load config from {self.config_path}: {e}")
