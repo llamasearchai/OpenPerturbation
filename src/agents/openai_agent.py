@@ -588,3 +588,13 @@ def generate_protocol(
     """Quick function to generate protocol."""
     agent = OpenPerturbationAgent(api_key=api_key)
     return agent.generate_experiment_protocol(experiment_type, parameters)
+
+
+class AnalysisAgent(OpenPerturbationAgent):
+    """Backward-compatibility alias for OpenPerturbationAgent (analysis-focused)."""
+    pass
+
+
+class ExperimentDesignAgent(OpenPerturbationAgent):
+    """Backward-compatibility alias for OpenPerturbationAgent (experiment-design helper)."""
+    pass
