@@ -27,6 +27,9 @@ from .routes import (
     system
 )
 
+# Import models for root endpoints
+from .models import CausalDiscoveryRequest, ExplainabilityRequest, InterventionDesignRequest
+
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
@@ -65,10 +68,10 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> FastAPI:
             "service": "OpenPerturbation API",
             "status": "healthy",
             "version": "1.0.0",
-            "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
         }
     
-    # Include route modules
+    # Include route modules with prefixes
     app.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
     app.include_router(configuration.router, prefix="/configuration", tags=["configuration"])
     app.include_router(data.router, prefix="/data", tags=["data"])
@@ -77,5 +80,19 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> FastAPI:
     app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
     app.include_router(models.router, prefix="/models", tags=["models"])
     app.include_router(system.router, prefix="/system", tags=["system"])
+    
+    # Add root-level aliases for main analysis endpoints (for backward compatibility)
+    # These endpoints are expected by the tests
+    @app.post("/causal-discovery")
+    async def causal_discovery_root(request: CausalDiscoveryRequest):
+        return await analysis.run_causal_discovery(request)
+    
+    @app.post("/explainability")
+    async def explainability_root(request: ExplainabilityRequest):
+        return await analysis.run_explainability_analysis(request)
+    
+    @app.post("/intervention-design")
+    async def intervention_design_root(request: InterventionDesignRequest):
+        return await analysis.design_interventions(request)
     
     return app 

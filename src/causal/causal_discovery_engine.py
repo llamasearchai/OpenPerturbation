@@ -19,7 +19,7 @@ from __future__ import annotations
 # --------------------------------------------------------------------------- #
 import warnings
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -31,31 +31,31 @@ from sklearn.linear_model import LassoCV
 try:
     import torch
     import torch.nn as nn
+    import torch.optim as optim
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    class nn: # type: ignore
-        Module = object
-        ModuleList = list
-        Parameter = object
-        def MSELoss(self): pass
+    torch = None  # type: ignore
+    nn = None  # type: ignore
+    optim = None  # type: ignore
 
 # causal-learn --------------------------------------------------------------- #
 try:
     from causallearn.search.ConstraintBased.PC import pc
     from causallearn.search.ScoreBased.GES import ges
-    from causallearn.search.FCMBased import DirectLiNGAM
+    from causallearn.search.FCMBased import lingam
     CAUSAL_LEARN_AVAILABLE = True
+    DirectLiNGAM = lingam.DirectLiNGAM
 except ImportError:
     CAUSAL_LEARN_AVAILABLE = False
-    pc = ges = DirectLiNGAM = None  # type: ignore # graceful fall-back
+    pc = ges = DirectLiNGAM = None  # type: ignore
 
 # pgmpy ---------------------------------------------------------------------- #
 try:
-    from pgmpy.estimators import HillClimbSearch
-    from pgmpy.models import BayesianNetwork
+    from pgmpy.estimators import HillClimbSearch  # type: ignore
+    from pgmpy.models import BayesianNetwork  # type: ignore
     try:  # pgmpy has renamed BicScore a few times
-        from pgmpy.estimators import BicScore
+        from pgmpy.estimators import BicScore  # type: ignore
     except ImportError:                                        # ↳ old alias
         from pgmpy.estimators import BICScore as BicScore      # type: ignore
     PGMPY_AVAILABLE = True
@@ -131,7 +131,7 @@ class CausalDiscoveryEngine:
     # --------------------------------------------------------------------- #
     def discover_causal_structure(
         self,
-        data: Union[np.ndarray, "torch.Tensor", pd.DataFrame],
+        data: Union[np.ndarray, Any, pd.DataFrame],
         interventions: Optional[np.ndarray] = None,
         variable_names: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
@@ -176,12 +176,19 @@ class CausalDiscoveryEngine:
     # --------------------------------------------------------------------- #
     def _preprocess_data(
         self,
-        data: Union[np.ndarray, "torch.Tensor", pd.DataFrame],
+        data: Union[np.ndarray, Any, pd.DataFrame],
         variable_names: Optional[List[str]]
     ) -> Tuple[np.ndarray, List[str]]:
 
-        if TORCH_AVAILABLE and isinstance(data, torch.Tensor):
-            data_np = data.detach().cpu().numpy()
+        # Handle torch tensor safely
+        if TORCH_AVAILABLE and torch is not None:
+            try:
+                if hasattr(data, 'detach') and hasattr(data, 'cpu') and hasattr(data, 'numpy'):
+                    data_np = data.detach().cpu().numpy()
+                else:
+                    data_np = np.asarray(data)
+            except Exception:
+                data_np = np.asarray(data)
         elif isinstance(data, pd.DataFrame):
             data_np = data.values
             variable_names = variable_names or list(data.columns)
@@ -212,7 +219,7 @@ class CausalDiscoveryEngine:
     def _discover_with_pc(self, X: np.ndarray,
                           interventions: Optional[np.ndarray] = None) -> Dict[str, Any]:
 
-        if not (CAUSAL_LEARN_AVAILABLE and pc):
+        if not (CAUSAL_LEARN_AVAILABLE and pc is not None):
             logger.warning("PC not available – falling back to correlation.")
             return self._discover_with_correlation(X)
 
@@ -231,47 +238,44 @@ class CausalDiscoveryEngine:
     def _discover_with_ges(self, X: np.ndarray,
                            interventions: Optional[np.ndarray] = None) -> Dict[str, Any]:
 
-        if not (CAUSAL_LEARN_AVAILABLE and ges):
+        if not (CAUSAL_LEARN_AVAILABLE and ges is not None):
             logger.warning("GES not available – falling back to correlation.")
             return self._discover_with_correlation(X)
 
         try:
-            record = ges(X, score_func="local_score_BIC")   # type: ignore[arg-type]
-            A = _graph_to_adjacency(record["G"], X.shape[1])
-            return {
-                "adjacency_matrix": A,
-                "confidence_scores": np.ones_like(A) * 0.8,
-            }
+            # Call ges with proper error handling
+            ges_result = ges(X)  # type: ignore
+            if isinstance(ges_result, dict) and 'G' in ges_result:
+                A = _graph_to_adjacency(ges_result['G'], X.shape[1])
+            else:
+                # Handle different return formats
+                A = _graph_to_adjacency(ges_result, X.shape[1])
+            return {"adjacency_matrix": A, "confidence_scores": np.ones_like(A) * 0.9}
         except Exception as exc:  # pragma: no cover
             logger.error("GES failed: %s", exc)
             return self._discover_with_correlation(X)
 
     def _discover_with_lingam(self, X: np.ndarray,
                               interventions: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        if not (CAUSAL_LEARN_AVAILABLE and DirectLiNGAM):
+
+        if not (CAUSAL_LEARN_AVAILABLE and DirectLiNGAM is not None):
             logger.warning("LiNGAM not available – falling back to correlation.")
             return self._discover_with_correlation(X)
 
         try:
-            model = DirectLiNGAM()
-            model.fit(X)
-            A = np.asarray(model.adjacency_matrix_, dtype=float)
-            return {
-                "adjacency_matrix": A,
-                "confidence_scores": np.abs(A),
-            }
+            lingam_model = DirectLiNGAM()
+            lingam_model.fit(X)
+            A = lingam_model.adjacency_matrix_
+            return {"adjacency_matrix": A, "confidence_scores": np.abs(A)}
         except Exception as exc:  # pragma: no cover
             logger.error("LiNGAM failed: %s", exc)
             return self._discover_with_correlation(X)
 
-    # ---- NOTEARS (simple NP implementation) ----------------------------- #
     def _discover_with_notears(self, X: np.ndarray,
                                interventions: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        logger.info("Running NOTEARS …")
         try:
             A = self._notears_algorithm(X)
-            conf = self._bootstrap_confidence(X, "notears")
-            return {"adjacency_matrix": A, "confidence_scores": conf}
+            return {"adjacency_matrix": A, "confidence_scores": np.abs(A)}
         except Exception as exc:  # pragma: no cover
             logger.error("NOTEARS failed: %s", exc)
             return self._discover_with_correlation(X)
@@ -280,23 +284,18 @@ class CausalDiscoveryEngine:
                            lambda_1: float = 0.1,
                            lr: float = 0.01,
                            max_iter: int = 100) -> np.ndarray:
-
-        n, d = X.shape
+        d = X.shape[1]
         W = np.random.randn(d, d) * 0.1
         np.fill_diagonal(W, 0)
-
+        
         def _h(Wm: np.ndarray) -> float:
-            return np.trace(np.exp(Wm * Wm)) - d
-
-        rho, alpha, h_tol = 1.0, 0.0, 1e-8
+            return np.trace(np.linalg.matrix_power(np.eye(d) + Wm * Wm / d, d)) - d
 
         for _ in range(max_iter):
-            # Gradient of squared error
-            grad = -X.T @ (X - X @ W) / n + lambda_1 * np.sign(W)
-            # Gradient of acyclicity constraint
-            E = np.exp(W * W)
-            grad_h = 2 * W * E
-            # Update
+            grad = (X.T @ X @ W - X.T @ X) / X.shape[0] + lambda_1 * np.sign(W)
+            grad_h = 2 * W / d * np.linalg.matrix_power(np.eye(d) + W * W / d, d - 1)
+            alpha, rho = 1e-6, 1.0
+            h_tol = 1e-8
             W -= lr * (grad + (alpha + rho * _h(W)) * grad_h)
             np.fill_diagonal(W, 0)
             if _h(W) <= h_tol:
@@ -307,12 +306,15 @@ class CausalDiscoveryEngine:
     # ---- Bayesian network (pgmpy) --------------------------------------- #
     def _discover_with_bayesian_network(self, X: np.ndarray,
                                         interventions: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        if not (PGMPY_AVAILABLE and HillClimbSearch and BicScore):
+        if not (PGMPY_AVAILABLE and HillClimbSearch is not None and BicScore is not None):
             logger.warning("pgmpy not available – falling back to correlation.")
             return self._discover_with_correlation(X)
 
         try:
-            df = pd.DataFrame(X, columns=[f"Var_{i}" for i in range(X.shape[1])])
+            column_names = [f"Var_{i}" for i in range(X.shape[1])]
+            # Create DataFrame with explicit data parameter
+            df = pd.DataFrame(X)  # type: ignore
+            df.columns = column_names  # type: ignore
             hc = HillClimbSearch(df)
             model = hc.estimate(scoring_method=BicScore(df))
             A = _graph_to_adjacency(model, X.shape[1])
@@ -324,7 +326,7 @@ class CausalDiscoveryEngine:
     # ---- Deep-learning toy baseline ------------------------------------- #
     def _discover_with_deep_learning(self, X: np.ndarray,
                                      interventions: Optional[np.ndarray] = None) -> Dict[str, Any]:
-        if not TORCH_AVAILABLE:
+        if not TORCH_AVAILABLE or torch is None or nn is None:
             warnings.warn("PyTorch not installed – using correlation fallback.")
             return self._discover_with_correlation(X)
         try:
@@ -339,41 +341,46 @@ class CausalDiscoveryEngine:
         Very lightweight VAE-style adjacency-learning toy model.
         NOT intended for production research, but useful as a placeholder.
         """
+        if not TORCH_AVAILABLE or torch is None or nn is None:
+            raise RuntimeError("PyTorch not available")
+            
         n, d = X_np.shape
         X = torch.tensor(X_np, dtype=torch.float32)
 
-        class Net(nn.Module):
+        class Net(nn.Module):  # type: ignore
             def __init__(self, d_: int):
                 super().__init__()
-                self.logits = nn.Parameter(torch.randn(d_, d_))
-                self.mech = nn.ModuleList([nn.Linear(d_, 1) for _ in range(d_)])
+                self.logits = nn.Parameter(torch.randn(d_, d_))  # type: ignore
+                self.mech = nn.ModuleList([nn.Linear(d_, 1) for _ in range(d_)])  # type: ignore
 
-            def forward(self, x):
-                A = torch.sigmoid(self.logits)
+            def forward(self, x: Any) -> Tuple[Any, Any]:
+                A = torch.sigmoid(self.logits)  # type: ignore
                 outs = []
                 for i in range(self.logits.shape[0]):
                     mask = A[i].clone()
                     mask[i] = 0.0
-                    outs.append(self.mech[i](x * mask))
-                return torch.cat(outs, dim=1), A
+                    outs.append(self.mech[i](x * mask.unsqueeze(0)))
+                return torch.cat(outs, dim=1), A  # type: ignore
 
         net = Net(d)
-        opt = torch.optim.Adam(net.parameters(), lr=0.01)
+        opt = torch.optim.Adam(net.parameters(), lr=0.01)  # type: ignore
+        loss_fn = nn.MSELoss()  # type: ignore
 
         for epoch in range(500):
             opt.zero_grad()
             recon, A = net(X)
-            loss = nn.MSELoss()(recon, X)
+            loss = loss_fn(recon, X)
             loss += 0.05 * A.sum()
             loss.backward()
             opt.step()
             if epoch % 100 == 0:
                 logger.debug("Epoch %04d | loss %.4f", epoch, loss.item())
-        with torch.no_grad():
+        
+        with torch.no_grad():  # type: ignore
             _, A = net(X)
-            A = A.numpy()
-        A[np.abs(A) < 0.1] = 0
-        return A
+            A_np = A.numpy()
+        A_np[np.abs(A_np) < 0.1] = 0
+        return A_np
 
     # ---- Correlation (default fallback) --------------------------------- #
     def _discover_with_correlation(self, X: np.ndarray,
@@ -425,7 +432,7 @@ class CausalDiscoveryEngine:
             hubs, auths = nx.hits(G, max_iter=1000, normalized=True)
             hub_scores = [hubs.get(i, 0.0) for i in G.nodes()]
             auth_scores = [auths.get(i, 0.0) for i in G.nodes()]
-        except (nx.exception.PowerIterationFailedConvergence, nx.NetworkXError):
+        except (nx.PowerIterationFailedConvergence, nx.NetworkXError):
             hub_scores = auth_scores = [0.0] * d
 
         return {
@@ -446,10 +453,10 @@ class CausalInferenceEngine:
     def __init__(self, causal_graph: np.ndarray, data: np.ndarray):
         self.causal_graph = causal_graph
         self.data = data
-        self.structural_equations = {}
+        self.structural_equations: Dict[int, Dict[str, Any]] = {}
         self._fit_structural_equations()
     
-    def _fit_structural_equations(self):
+    def _fit_structural_equations(self) -> None:
         """Fit structural equation models for each variable."""
         n_vars = self.causal_graph.shape[0]
         
@@ -473,14 +480,14 @@ class CausalInferenceEngine:
                 # No parents, just noise
                 self.structural_equations[i] = {
                     'model': None,
-                    'parents': [],
+                    'parents': np.array([], dtype=int),
                     'noise_variance': np.var(self.data[:, i])
                 }
     
     def predict_intervention_effect(self, 
                                   intervention_targets: List[int],
                                   intervention_values: List[float],
-                                  target_variables: Optional[List[int]] = None) -> Dict:
+                                  target_variables: Optional[List[int]] = None) -> Dict[str, Any]:
         """
         Predict the effect of interventions using do-calculus.
         
@@ -569,17 +576,27 @@ class CausalInferenceEngine:
 # --------------------------------------------------------------------------- #
 def run_causal_discovery(causal_factors: np.ndarray,
                         perturbation_labels: np.ndarray,
-                        config: Dict) -> Dict[str, Any]:
+                        config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Main function to run causal discovery analysis.
     """
     logger.info("SEARCH: Starting comprehensive causal discovery analysis...")
     discovery_engine = CausalDiscoveryEngine(config)
     
-    # ... (rest of the function from the original file can be pasted here)
-    # This is just a placeholder to show where it would go.
-    # The logic for combining data and calling discover_causal_structure
-    # would be needed.
+    # Run discovery on the causal factors
+    results = discovery_engine.discover_causal_structure(
+        data=causal_factors,
+        variable_names=config.get("variable_names", None)
+    )
+    
+    # Add perturbation information
+    results["perturbation_labels"] = perturbation_labels.tolist() if perturbation_labels is not None else None
+    results["perturbation_info"] = {
+        "n_perturbations": len(np.unique(perturbation_labels)) if perturbation_labels is not None else 0,
+        "perturbation_distribution": dict(zip(*np.unique(perturbation_labels, return_counts=True))) if perturbation_labels is not None else {}
+    }
+    
+    return results
 
 def evaluate_discovery_performance(true_adjacency: np.ndarray,
                                    discovered_adjacency: np.ndarray) -> Dict[str, float]:
@@ -627,18 +644,24 @@ def visualize_causal_network(discovery_results: Dict[str, Any],
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
     pos = nx.spring_layout(G, k=0.8, iterations=50)
 
+    # Calculate node sizes and colors safely
     node_sizes = [300 + 100 * G.out_degree(n) for n in G.nodes]
-    node_colors = [G.in_degree(n) for n in G.nodes]
+    in_degrees = [int(G.in_degree(n)) for n in G.nodes()]
     
     nx.draw_networkx_nodes(G, pos, ax=ax, node_size=node_sizes, 
-                           node_color=node_colors, cmap='viridis', alpha=0.9)
+                           node_color=in_degrees, cmap='viridis', alpha=0.9)
 
-    edge_weights = [A[u,v] for u,v in G.edges]
-    nx.draw_networkx_edges(G, pos, ax=ax, width=[w*2 for w in edge_weights], 
+    # Calculate edge widths safely
+    edge_weights = []
+    for u, v in G.edges():
+        weight = A[u, v] if 0 <= u < A.shape[0] and 0 <= v < A.shape[1] else 1.0
+        edge_weights.append(max(0.5, float(weight) * 2))
+    
+    nx.draw_networkx_edges(G, pos, ax=ax, width=edge_weights, 
                            alpha=0.6, arrowsize=15)
     
-    if variable_names:
-        labels = {i: name for i, name in enumerate(variable_names)}
+    if variable_names and len(variable_names) >= len(G.nodes()):
+        labels = {i: name for i, name in enumerate(variable_names) if i in G.nodes()}
         nx.draw_networkx_labels(G, pos, labels=labels, ax=ax, font_size=8)
         
     ax.set_title(f"Discovered Causal Network ({discovery_results['method']})")

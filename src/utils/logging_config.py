@@ -17,7 +17,7 @@ def setup_logging(
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
     enable_colors: bool = True
-) -> None:
+) -> logging.Logger:
     """Setup logging configuration."""
     
     # Create logs directory if it doesn't exist
@@ -93,6 +93,9 @@ def setup_logging(
     logger.info(f"Logging configured with level: {level}")
     if log_file:
         logger.info(f"Log file: {log_file}")
+    
+    # Return the configured logger
+    return logger
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger with the specified name."""

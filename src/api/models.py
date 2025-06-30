@@ -1,7 +1,8 @@
 """
-Pydantic models for API requests and responses.
+Pydantic models for OpenPerturbation API.
 
-Author: Nik Jois <nikjois@llamasearch.ai>
+Author: Nik Jois
+Email: nikjois@llamasearch.ai
 """
 
 from __future__ import annotations
@@ -18,10 +19,10 @@ from pydantic import BaseModel, Field, field_validator
 # -----------------------------------------------------------------------------
 
 class JobStatus(str, Enum):
-    pending = "pending"
-    running = "running"
-    completed = "completed"
-    failed = "failed"
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
     cancelled = "cancelled"
 
 
@@ -45,13 +46,10 @@ class BaseResponse(BaseModel):
 # -----------------------------------------------------------------------------
 class HealthResponse(BaseModel):
     """Health check response model."""
-    status: str
+    service: str = "OpenPerturbation API"
+    status: str = "healthy"
+    version: str = "1.0.0"
     timestamp: str
-    version: str
-    gpu_available: bool
-    gpu_memory_gb: Optional[float] = None
-    disk_free_gb: float
-    active_jobs: int
 
 
 # -----------------------------------------------------------------------------
@@ -83,96 +81,53 @@ class AnalysisResponse(BaseResponse):
 # -----------------------------------------------------------------------------
 # Causal discovery
 # -----------------------------------------------------------------------------
-class CausalDiscoveryRequest(BaseRequest):
-    """Request model for causal discovery."""
-    data: Optional[List[List[float]]] = None
-    method: Optional[str] = None
-    alpha: Optional[float] = None
+class CausalDiscoveryRequest(BaseModel):
+    data: List[List[float]]
+    method: str = "correlation"
+    alpha: float = 0.05
     variable_names: Optional[List[str]] = None
-    
-    @field_validator('method')
-    @classmethod
-    def validate_method(cls, v):
-        allowed_methods = ['pc', 'fci', 'ges', 'lingam', 'direct_lingam']
-        if v not in allowed_methods:
-            raise ValueError(f'method must be one of {allowed_methods}')
-        return v
+    max_lag: int = 0
 
-class CausalDiscoveryResponse(BaseResponse):
-    """Response model for causal discovery."""
-    job_id: str
-    graph: Dict[str, Any]
-    metrics: Dict[str, float]
-    method_used: str
+class CausalDiscoveryResponse(BaseModel):
+    adjacency_matrix: List[List[float]]
+    method: str
+    variable_names: List[str]
+    confidence_scores: Optional[List[List[float]]] = None
     execution_time: float
-    node_count: int
-    edge_count: int
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
 # Intervention design
 # -----------------------------------------------------------------------------
-class InterventionDesignRequest(BaseRequest):
-    """Request model for intervention design."""
-    variable_names: Optional[List[str]] = None
-    batch_size: Optional[int] = None
-    budget: Optional[float] = None
-    optimization_target: str = Field(default="maximize_effect", description="Optimization target")
-    constraints: Optional[Dict[str, Any]] = Field(default=None, description="Additional constraints")
-    risk_tolerance: float = Field(default=0.1, ge=0, le=1, description="Risk tolerance level")
-    
-    @field_validator('variable_names')
-    @classmethod
-    def validate_variable_names(cls, v):
-        if not v or len(v) == 0:
-            raise ValueError('variable_names must contain at least one variable')
-        return v
-    
-    @field_validator('optimization_target')
-    @classmethod
-    def validate_optimization_target(cls, v):
-        allowed_targets = ['maximize_effect', 'minimize_cost', 'maximize_efficiency', 'balanced']
-        if v not in allowed_targets:
-            raise ValueError(f'optimization_target must be one of {allowed_targets}')
-        return v
+class InterventionDesignRequest(BaseModel):
+    variable_names: List[str]
+    batch_size: int = 10
+    budget: float = 1000.0
+    constraints: Optional[Dict[str, Any]] = None
 
-class InterventionDesignResponse(BaseResponse):
-    """Response model for intervention design."""
-    interventions_designed: int
-    interventions: List[Dict[str, Any]]
-    expected_effects: Dict[str, Dict[str, float]]
-    total_estimated_cost: float
-    design_confidence: float
-    batch_size: int
-    within_budget: bool
-    risk_assessment: Dict[str, float]
+class InterventionDesignResponse(BaseModel):
+    recommended_interventions: List[Dict[str, Any]]
+    intervention_ranking: List[Dict[str, float]]
+    expected_outcomes: Dict[str, Any]
+    execution_time: float
 
 
 # -----------------------------------------------------------------------------
 # Explainability
 # -----------------------------------------------------------------------------
-class ExplainabilityRequest(BaseRequest):
-    """Request model for explainability analysis."""
-    model_path: Optional[str] = None
-    data_path: Optional[str] = None
-    analysis_types: Optional[List[str]] = None
-    
-    @field_validator('analysis_types')
-    @classmethod
-    def validate_analysis_types(cls, v):
-        allowed_types = ['attention', 'grad_cam', 'shap', 'lime', 'integrated_gradients']
-        if v and any(t not in allowed_types for t in v):
-            raise ValueError(f'analysis_types must be one of {allowed_types}')
-        return v
+class ExplainabilityRequest(BaseModel):
+    model_path: str
+    data_path: str
+    analysis_types: List[str] = Field(default_factory=lambda: ["attention"])
+    output_dir: Optional[str] = None
 
-class ExplainabilityResponse(BaseResponse):
-    """Response model for explainability analysis."""
-    job_id: str
-    explanations: Dict[str, Any]
-    importance_scores: Dict[str, float]
-    method_used: str
-    sample_count: int
-    confidence_scores: Dict[str, float]
+class ExplainabilityResponse(BaseModel):
+    attention_analysis: Optional[Dict[str, Any]] = None
+    concept_analysis: Optional[Dict[str, Any]] = None
+    pathway_analysis: Optional[Dict[str, Any]] = None
+    execution_time: float
+    output_paths: List[str] = Field(default_factory=list)
 
 
 # -----------------------------------------------------------------------------
@@ -200,28 +155,26 @@ class DataUploadRequest(BaseRequest):
             raise ValueError(f'file_format must be one of {allowed_formats}')
         return v
 
-class DataUploadResponse(BaseResponse):
-    """Response model for data upload."""
-    filename: str = ""
-    file_path: str = ""
-    file_size: int = 0
-    format: str = ""
-    status: str = ""
-    message: str = ""
+class DataUploadResponse(BaseModel):
+    filename: str
+    file_size: int
+    upload_time: str
+    data_type: str
+    summary: Dict[str, Any] = Field(default_factory=dict)
 
 
 # -----------------------------------------------------------------------------
 # Model catalogue
 # -----------------------------------------------------------------------------
 class ModelInfo(BaseModel):
-    """Model information model."""
-    name: str = ""
-    description: str = ""
-    version: str = Field(..., description="Model version")
-    input_types: List[str] = Field(..., description="Supported input types")
-    parameters: Dict[str, Any] = Field(..., description="Model parameters")
-    performance_metrics: Optional[Dict[str, float]] = Field(default=None, description="Performance metrics")
-    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    name: str
+    description: str
+    version: str = "1.0.0"
+    input_types: List[str] = Field(default_factory=lambda: ["multimodal"])
+    output_types: List[str] = Field(default_factory=lambda: ["predictions"])
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    capabilities: List[str] = Field(default_factory=list)
+    last_updated: Optional[str] = None
 
 class ModelListResponse(BaseResponse):
     """Response model for model listing."""
@@ -234,24 +187,13 @@ class ModelListResponse(BaseResponse):
 # Experiment management
 # -----------------------------------------------------------------------------
 class ExperimentInfo(BaseModel):
-    """Experiment information model."""
-    id: str = Field(..., description="Experiment ID")
-    name: str = Field(..., description="Experiment name")
-    description: str = Field(..., description="Experiment description")
-    data_sources: List[str] = Field(..., description="Data sources used")
-    status: str = Field(..., description="Experiment status")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
-    config: Dict[str, Any] = Field(..., description="Experiment configuration")
-    results: Optional[Dict[str, Any]] = Field(default=None, description="Experiment results")
-    
-    @field_validator('status')
-    @classmethod
-    def validate_status(cls, v):
-        allowed_statuses = ['active', 'completed', 'failed', 'paused', 'cancelled']
-        if v not in allowed_statuses:
-            raise ValueError(f'status must be one of {allowed_statuses}')
-        return v
+    experiment_id: str
+    name: str
+    description: str
+    status: str
+    created_at: str
+    config: Dict[str, Any]
+    results: Optional[Dict[str, Any]] = None
 
 class ExperimentListResponse(BaseResponse):
     """Response model for experiment listing."""
@@ -265,17 +207,13 @@ class ExperimentListResponse(BaseResponse):
 # Dataset management
 # -----------------------------------------------------------------------------
 class DatasetInfo(BaseModel):
-    """Dataset information model."""
-    name: str = Field(..., description="Dataset name")
-    description: str = Field(..., description="Dataset description")
-    data_type: str = Field(..., description="Data type")
-    format: str = Field(..., description="File format")
-    size: int = Field(..., description="Dataset size in bytes")
-    source: str = Field(..., description="Data source")
-    last_updated: datetime = Field(..., description="Last update timestamp")
-    version: str = Field(default="1.0", description="Dataset version")
-    license: Optional[str] = Field(default=None, description="Dataset license")
-    citation: Optional[str] = Field(default=None, description="Citation information")
+    name: str
+    description: str
+    size: int
+    format: str
+    modalities: List[str]
+    created_at: str
+    tags: List[str] = Field(default_factory=list)
 
 class DatasetListResponse(BaseResponse):
     """Response model for dataset listing."""
@@ -288,32 +226,27 @@ class DatasetListResponse(BaseResponse):
 # -----------------------------------------------------------------------------
 # Configuration validation
 # -----------------------------------------------------------------------------
-class ConfigValidationRequest(BaseRequest):
-    """Request model for configuration validation."""
-    config: Dict[str, Any] = Field(..., description="Configuration to validate")
+class ConfigValidationRequest(BaseModel):
+    config: Dict[str, Any]
 
-class ConfigValidationResponse(BaseResponse):
-    """Response model for configuration validation."""
+class ConfigValidationResponse(BaseModel):
     valid: bool
-    errors: List[str]
-    warnings: List[str]
-    suggestions: List[str]
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    suggestions: List[str] = Field(default_factory=list)
 
 
 # -----------------------------------------------------------------------------
 # System information
 # -----------------------------------------------------------------------------
 class SystemInfo(BaseModel):
-    """System information model."""
-    python_version: str = Field(..., description="Python version")
-    pytorch_version: str = Field(..., description="PyTorch version")
-    platform: str = Field(..., description="Platform information")
-    cpu_count: int = Field(..., description="Number of CPU cores")
-    memory_available: int = Field(..., description="Available memory in bytes")
-    gpu_available: bool = Field(..., description="GPU availability")
-    gpu_info: Optional[Dict[str, Any]] = Field(default=None, description="GPU information")
-    dependencies: Dict[str, bool] = Field(..., description="Dependency availability")
-    system_load: Optional[Dict[str, float]] = Field(default=None, description="System load information")
+    platform: str
+    python_version: str
+    cpu_count: int
+    memory_gb: float
+    gpu_available: bool = False
+    dependencies: Dict[str, str] = Field(default_factory=dict)
+    timestamp: str
 
 class SystemInfoResponse(BaseResponse):
     """Response model for system information."""
@@ -364,12 +297,10 @@ class RootResponse(BaseResponse):
 # Error handling
 # -----------------------------------------------------------------------------
 class ErrorResponse(BaseModel):
-    """Error response model."""
     error: str
-    detail: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    request_id: Optional[str] = None
-    error_code: Optional[str] = None
+    message: str
+    timestamp: str
+    details: Optional[Dict[str, Any]] = None
 
 class ValidationResult(BaseModel):
     """Validation result model."""
@@ -430,4 +361,26 @@ class ResultsSummary(BaseModel):
     total_compounds: int = 0
     active_compounds: int = 0
     completion_time: str = ""
-    summary_stats: Optional[Dict[str, Any]] = Field(default=None, description="Summary statistics") 
+    summary_stats: Optional[Dict[str, Any]] = Field(default=None, description="Summary statistics")
+
+
+# -----------------------------------------------------------------------------
+# Job management
+# -----------------------------------------------------------------------------
+class JobInfo(BaseModel):
+    job_id: str
+    status: JobStatus
+    created_at: str
+    updated_at: str
+    progress: float = 0.0
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+# -----------------------------------------------------------------------------
+# Analysis models
+# -----------------------------------------------------------------------------
+class AnalysisModels(BaseModel):
+    causal_discovery: List[str] = Field(default_factory=lambda: ["pc", "ges", "lingam", "correlation"])
+    explainability: List[str] = Field(default_factory=lambda: ["attention", "concept", "pathway"])
+    prediction: List[str] = Field(default_factory=lambda: ["multimodal_fusion", "causal_vae"]) 
