@@ -59,10 +59,9 @@ class HealthResponse(BaseModel):
 # -----------------------------------------------------------------------------
 class AnalysisRequest(BaseRequest):
     """Request model for analysis operations."""
-    experiment_type: str = Field(..., description="Type of experiment to run", min_length=1)
-    data_source: str = Field(..., description="Source of data", min_length=1)
-    model_configuration: Optional[Dict[str, Any]] = Field(default=None, description="Model configuration")
-    parameters: Optional[Dict[str, Any]] = Field(default=None, description="Analysis parameters")
+    experiment_type: Optional[str] = None
+    data_paths: Optional[List[str]] = None
+    parameters: Optional[Dict[str, Any]] = None
     
     @field_validator('experiment_type')
     @classmethod
@@ -70,14 +69,6 @@ class AnalysisRequest(BaseRequest):
         allowed_types = ['causal_discovery', 'intervention_design', 'explainability', 'multimodal_fusion']
         if v not in allowed_types:
             raise ValueError(f'experiment_type must be one of {allowed_types}')
-        return v
-    
-    @field_validator('data_source')
-    @classmethod
-    def validate_data_source(cls, v):
-        allowed_sources = ['genomics', 'imaging', 'chemical', 'multimodal']
-        if v not in allowed_sources:
-            raise ValueError(f'data_source must be one of {allowed_sources}')
         return v
 
 class AnalysisResponse(BaseResponse):
@@ -94,12 +85,10 @@ class AnalysisResponse(BaseResponse):
 # -----------------------------------------------------------------------------
 class CausalDiscoveryRequest(BaseRequest):
     """Request model for causal discovery."""
-    data_path: str = Field(..., description="Path to data file", min_length=1)
-    method: str = Field(default="pc", description="Causal discovery method")
-    alpha: float = Field(default=0.05, ge=0.001, le=0.1, description="Significance level")
-    max_depth: int = Field(default=3, ge=1, le=10, description="Maximum depth for search")
-    variables: Optional[List[str]] = Field(default=None, description="Variables to analyze")
-    independence_test: str = Field(default="fisherz", description="Independence test method")
+    data: Optional[List[List[float]]] = None
+    method: Optional[str] = None
+    alpha: Optional[float] = None
+    variable_names: Optional[List[str]] = None
     
     @field_validator('method')
     @classmethod
@@ -107,14 +96,6 @@ class CausalDiscoveryRequest(BaseRequest):
         allowed_methods = ['pc', 'fci', 'ges', 'lingam', 'direct_lingam']
         if v not in allowed_methods:
             raise ValueError(f'method must be one of {allowed_methods}')
-        return v
-    
-    @field_validator('independence_test')
-    @classmethod
-    def validate_independence_test(cls, v):
-        allowed_tests = ['fisherz', 'chisq', 'g2', 'kci']
-        if v not in allowed_tests:
-            raise ValueError(f'independence_test must be one of {allowed_tests}')
         return v
 
 class CausalDiscoveryResponse(BaseResponse):
@@ -133,9 +114,9 @@ class CausalDiscoveryResponse(BaseResponse):
 # -----------------------------------------------------------------------------
 class InterventionDesignRequest(BaseRequest):
     """Request model for intervention design."""
-    variable_names: List[str] = Field(..., description="Variables to target")
-    budget: float = Field(..., gt=0, description="Budget constraint")
-    batch_size: int = Field(default=10, ge=1, le=100, description="Batch size for experiments")
+    variable_names: Optional[List[str]] = None
+    batch_size: Optional[int] = None
+    budget: Optional[float] = None
     optimization_target: str = Field(default="maximize_effect", description="Optimization target")
     constraints: Optional[Dict[str, Any]] = Field(default=None, description="Additional constraints")
     risk_tolerance: float = Field(default=0.1, ge=0, le=1, description="Risk tolerance level")
@@ -172,18 +153,16 @@ class InterventionDesignResponse(BaseResponse):
 # -----------------------------------------------------------------------------
 class ExplainabilityRequest(BaseRequest):
     """Request model for explainability analysis."""
-    model_path: str = Field(..., description="Path to trained model", min_length=1)
-    data_path: str = Field(..., description="Path to data for explanation", min_length=1)
-    method: str = Field(default="attention", description="Explanation method")
-    target_variables: Optional[List[str]] = Field(default=None, description="Target variables")
-    sample_size: int = Field(default=100, ge=1, le=10000, description="Number of samples to explain")
+    model_path: Optional[str] = None
+    data_path: Optional[str] = None
+    analysis_types: Optional[List[str]] = None
     
-    @field_validator('method')
+    @field_validator('analysis_types')
     @classmethod
-    def validate_method(cls, v):
-        allowed_methods = ['attention', 'grad_cam', 'shap', 'lime', 'integrated_gradients']
-        if v not in allowed_methods:
-            raise ValueError(f'method must be one of {allowed_methods}')
+    def validate_analysis_types(cls, v):
+        allowed_types = ['attention', 'grad_cam', 'shap', 'lime', 'integrated_gradients']
+        if v and any(t not in allowed_types for t in v):
+            raise ValueError(f'analysis_types must be one of {allowed_types}')
         return v
 
 class ExplainabilityResponse(BaseResponse):
@@ -223,14 +202,12 @@ class DataUploadRequest(BaseRequest):
 
 class DataUploadResponse(BaseResponse):
     """Response model for data upload."""
-    file_id: str
-    filename: str
-    data_type: str
-    file_size: int
-    file_path: str
-    upload_timestamp: datetime
-    status: str
-    validation_results: Optional[Dict[str, Any]] = None
+    filename: str = ""
+    file_path: str = ""
+    file_size: int = 0
+    format: str = ""
+    status: str = ""
+    message: str = ""
 
 
 # -----------------------------------------------------------------------------
@@ -238,8 +215,8 @@ class DataUploadResponse(BaseResponse):
 # -----------------------------------------------------------------------------
 class ModelInfo(BaseModel):
     """Model information model."""
-    name: str = Field(..., description="Model name")
-    description: str = Field(..., description="Model description")
+    name: str = ""
+    description: str = ""
     version: str = Field(..., description="Model version")
     input_types: List[str] = Field(..., description="Supported input types")
     parameters: Dict[str, Any] = Field(..., description="Model parameters")
@@ -431,10 +408,10 @@ class JobListResponse(BaseResponse):
 
 class ExperimentConfig(BaseModel):
     """Experiment configuration model."""
-    id: str = Field(..., description="Experiment ID")
-    name: str = Field(..., description="Experiment name")
-    status: str = Field(..., description="Experiment status")
-    created_at: datetime = Field(..., description="Creation timestamp")
+    id: str = ""
+    name: str = ""
+    status: str = ""
+    created_at: str = ""
     config: Dict[str, Any] = Field(default_factory=dict, description="Experiment configuration")
     results: Optional[Dict[str, Any]] = Field(default=None, description="Experiment results")
     
@@ -448,9 +425,9 @@ class ExperimentConfig(BaseModel):
 
 class ResultsSummary(BaseModel):
     """Results summary model."""
-    job_id: str = Field(..., description="Job ID")
-    status: str = Field(..., description="Job status")
-    total_compounds: int = Field(..., description="Total number of compounds")
-    active_compounds: int = Field(..., description="Number of active compounds")
-    completion_time: datetime = Field(..., description="Completion timestamp")
+    job_id: str = ""
+    status: str = ""
+    total_compounds: int = 0
+    active_compounds: int = 0
+    completion_time: str = ""
     summary_stats: Optional[Dict[str, Any]] = Field(default=None, description="Summary statistics") 
