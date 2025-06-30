@@ -1168,17 +1168,17 @@ def run_pathway_analysis(gene_list: List[str],
     
     # Initialize components
     if pathway_database is None:
-        logger.info("🗄️ Initializing pathway database...")
+        logger.info("DATABASE: Initializing pathway database...")
         pathway_database = PathwayDatabase()
     
     enrichment_analyzer = PathwayEnrichmentAnalyzer(pathway_database)
     network_analyzer = NetworkAnalyzer(pathway_database)
     visualizer = PathwayVisualizer()
     
-    logger.info(f"🧬 Analyzing {len(gene_list)} genes...")
+    logger.info(f" Analyzing {len(gene_list)} genes...")
     
     # Step 1: Pathway Enrichment Analysis
-    logger.info("📊 Running pathway enrichment analysis...")
+    logger.info("STATS: Running pathway enrichment analysis...")
     enrichment_results = enrichment_analyzer.analyze_enrichment(
         gene_list,
         min_pathway_size=config['min_pathway_size'],
@@ -1190,12 +1190,12 @@ def run_pathway_analysis(gene_list: List[str],
         if r.adjusted_p_value < config['significance_threshold']
     ]
     
-    logger.info(f"✅ Found {len(significant_results)} significantly enriched pathways")
+    logger.info(f"SUCCESS: Found {len(significant_results)} significantly enriched pathways")
     
     # Step 2: Network Analysis
     network_analysis = None
     if config.get('network_analysis', True) and significant_results:
-        logger.info("🕸️ Building pathway network...")
+        logger.info("NETWORK: Building pathway network...")
         significant_pathway_ids = [r.pathway_id for r in significant_results[:20]]
         
         pathway_network = network_analyzer.build_pathway_network(significant_pathway_ids)
@@ -1204,21 +1204,21 @@ def run_pathway_analysis(gene_list: List[str],
         # Find hub genes
         hub_genes = network_analyzer.find_network_hubs(pathway_network, top_k=10)
         
-        logger.info(f"📈 Network analysis complete: {len(network_analysis.nodes)} nodes, "
+        logger.info(f"METRICS: Network analysis complete: {len(network_analysis.nodes)} nodes, "
                    f"{len(network_analysis.edges)} edges")
     
     # Step 3: Crosstalk Analysis
     crosstalk_data = None
     if config.get('crosstalk_analysis', True) and len(significant_results) > 1:
-        logger.info("🔗 Analyzing pathway crosstalk...")
+        logger.info("LINK: Analyzing pathway crosstalk...")
         significant_pathway_ids = [r.pathway_id for r in significant_results[:15]]
         crosstalk_data = network_analyzer.analyze_pathway_crosstalk(significant_pathway_ids)
         
         strong_crosstalk = len(crosstalk_data['strong_crosstalk'])
-        logger.info(f"🔗 Found {strong_crosstalk} strong crosstalk pairs")
+        logger.info(f"LINK: Found {strong_crosstalk} strong crosstalk pairs")
     
     # Step 4: Generate Visualizations
-    logger.info("📊 Generating visualizations...")
+    logger.info("STATS: Generating visualizations...")
     
     # Enrichment plot
     enrichment_fig = visualizer.plot_enrichment_results(
@@ -1258,7 +1258,7 @@ def run_pathway_analysis(gene_list: List[str],
     )
     
     # Step 5: Generate Reports
-    logger.info("📄 Generating analysis reports...")
+    logger.info("REPORT: Generating analysis reports...")
     enrichment_analyzer.generate_enrichment_report(
         enrichment_results,
         output_file=str(output_path / "pathway_enrichment_report.txt"),
@@ -1304,7 +1304,7 @@ def run_pathway_analysis(gene_list: List[str],
         }
         json.dump(json_results, f, indent=2)
     
-    logger.info(f"🎉 Pathway analysis completed! Results saved to: {output_path}")
+    logger.info(f"COMPLETE: Pathway analysis completed! Results saved to: {output_path}")
     return results
 
 def generate_pathway_summary_report(enrichment_results: List[PathwayEnrichmentResult],

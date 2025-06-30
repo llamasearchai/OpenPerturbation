@@ -1310,7 +1310,7 @@ def generate_concept_analysis_report(results: Dict[str, Any], output_file: str):
     top_accuracy = sorted(all_concept_results, key=lambda x: x["cav_accuracy"], reverse=True)[:10]
 
     for i, result in enumerate(top_accuracy, 1):
-        significance = "✓" if result["is_significant"] else "✗"
+        significance = "" if result["is_significant"] else ""
         report_lines.append(
             f"{i}. **{result['concept_name']}** ({result['layer']}) - Accuracy: {result['cav_accuracy']:.3f} {significance}"
         )
@@ -1337,26 +1337,26 @@ def generate_concept_analysis_report(results: Dict[str, Any], output_file: str):
 
     if total_significant / total_concepts > 0.3 if total_concepts > 0 else False:
         report_lines.append(
-            "✅ **High concept significance rate** - Model shows good biological concept learning"
+            "SUCCESS: **High concept significance rate** - Model shows good biological concept learning"
         )
     else:
         report_lines.append(
-            "⚠️ **Low concept significance rate** - Consider model architecture or training improvements"
+            "WARNING: **Low concept significance rate** - Consider model architecture or training improvements"
         )
 
     if len([r for r in all_concept_results if r["cav_accuracy"] > 0.7]) > 5:
         report_lines.append(
-            "✅ **Strong concept separability** - Model effectively distinguishes biological concepts"
+            "SUCCESS: **Strong concept separability** - Model effectively distinguishes biological concepts"
         )
     else:
         report_lines.append(
-            "💡 **Improve concept separability** - Consider feature engineering or data augmentation"
+            "NOTE: **Improve concept separability** - Consider feature engineering or data augmentation"
         )
 
     # Layer-specific recommendations
     best_layer = max(results["summary_statistics"].items(), key=lambda x: x[1]["mean_cav_accuracy"])
     report_lines.append(
-        f"🎯 **Best performing layer: {best_layer[0]}** - Focus analysis on this layer"
+        f"TARGET: **Best performing layer: {best_layer[0]}** - Focus analysis on this layer"
     )
 
     report_lines.extend(

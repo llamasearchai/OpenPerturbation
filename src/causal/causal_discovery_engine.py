@@ -138,7 +138,7 @@ class CausalDiscoveryEngine:
         """
         Run the configured discovery algorithm and return a rich result dict.
         """
-        logger.info("🔍  Starting causal discovery with method: %s", self.method)
+        logger.info("SEARCH:  Starting causal discovery with method: %s", self.method)
 
         X, var_names = self._preprocess_data(data, variable_names)
 
@@ -167,7 +167,7 @@ class CausalDiscoveryEngine:
 
         # Post-hoc network analysis
         result["analysis"] = self._analyze_causal_structure(result)
-        logger.info("✅  Discovery done: %d edges",
+        logger.info("SUCCESS:  Discovery done: %d edges",
                     result["analysis"]["num_edges"])
         return result
 
@@ -573,7 +573,7 @@ def run_causal_discovery(causal_factors: np.ndarray,
     """
     Main function to run causal discovery analysis.
     """
-    logger.info("🔍 Starting comprehensive causal discovery analysis...")
+    logger.info("SEARCH: Starting comprehensive causal discovery analysis...")
     discovery_engine = CausalDiscoveryEngine(config)
     
     # ... (rest of the function from the original file can be pasted here)

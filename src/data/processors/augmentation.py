@@ -940,7 +940,7 @@ def create_augmentation_pipeline(
 def test_augmentations():
     """Test augmentation pipeline."""
 
-    print("🧪 Testing Augmentation Pipeline...")
+    print("TEST: Testing Augmentation Pipeline...")
 
     # Create synthetic test data
     np.random.seed(42)
@@ -977,17 +977,17 @@ def test_augmentations():
     aug_pipeline = create_augmentation_pipeline(config, mode="train")
 
     # Test single image augmentation
-    print("  📸 Testing single image augmentation...")
+    print("  CAMERA: Testing single image augmentation...")
     perturbation_info = {"type": "knockout", "target": "TP53"}
 
     result = aug_pipeline(image=test_image, mask=test_mask, perturbation_info=perturbation_info)
 
-    print(f"    ✅ Original image shape: {test_image.shape}")
-    print(f"    ✅ Augmented image shape: {result['image'].shape}")
-    print(f"    ✅ Augmented image type: {type(result['image'])}")
+    print(f"    SUCCESS: Original image shape: {test_image.shape}")
+    print(f"    SUCCESS: Augmented image shape: {result['image'].shape}")
+    print(f"    SUCCESS: Augmented image type: {type(result['image'])}")
 
     # Test batch augmentation
-    print("  🔄 Testing batch augmentation...")
+    print("  CYCLE: Testing batch augmentation...")
     batch_images = torch.randn(8, 5, 224, 224)
     batch_labels = torch.randint(0, 10, (8,))
 
@@ -995,19 +995,19 @@ def test_augmentations():
         batch_images, batch_labels
     )
 
-    print(f"    ✅ Batch mixed images shape: {mixed_images.shape}")
-    print(f"    ✅ Lambda value: {lam:.3f}")
+    print(f"    SUCCESS: Batch mixed images shape: {mixed_images.shape}")
+    print(f"    SUCCESS: Lambda value: {lam:.3f}")
 
     # Test different perturbation types
-    print("  🧬 Testing perturbation-specific augmentations...")
+    print("   Testing perturbation-specific augmentations...")
     perturbation_types = ["control", "knockout", "overexpression", "drug_treatment"]
 
     for ptype in perturbation_types:
         perturbation_info = {"type": ptype, "target": "test_gene"}
         result = aug_pipeline(image=test_image, mask=test_mask, perturbation_info=perturbation_info)
-        print(f"    ✅ {ptype}: Image augmented successfully")
+        print(f"    SUCCESS: {ptype}: Image augmented successfully")
 
-    print("🎉 Augmentation pipeline test completed successfully!")
+    print("COMPLETE: Augmentation pipeline test completed successfully!")
 
 
 if __name__ == "__main__":

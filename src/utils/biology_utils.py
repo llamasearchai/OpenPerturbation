@@ -597,7 +597,7 @@ def annotate_biological_pathways(concepts: torch.Tensor, config: Dict) -> Dict:
     Returns:
         Dictionary with pathway annotations and enrichment analysis
     """
-    print("  🛤️ Annotating biological pathways...")
+    print("  PATH: Annotating biological pathways...")
     
     # Initialize knowledge base
     knowledge_base = BiologicalKnowledgeBase(config)
@@ -665,8 +665,8 @@ def annotate_biological_pathways(concepts: torch.Tensor, config: Dict) -> Dict:
         'confidence_scores': calculate_annotation_confidence(corrected_results, network_modules)
     }
     
-    print(f"    📊 Found {len(corrected_results['significant_pathways'])} significantly enriched pathways")
-    print(f"    🔗 Identified {len(network_modules['modules'])} network modules")
+    print(f"    STATS: Found {len(corrected_results['significant_pathways'])} significantly enriched pathways")
+    print(f"    LINK: Identified {len(network_modules['modules'])} network modules")
     
     return pathway_annotations
 

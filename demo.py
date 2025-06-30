@@ -20,13 +20,13 @@ def test_imports():
     """Test that all major components can be imported."""
     try:
         from src.training.data_modules import PerturbationDataModule
-        print("✅ Data modules imported successfully")
+        print("SUCCESS: Data modules imported successfully")
         
         from src.causal.causal_discovery_engine import CausalDiscoveryEngine
-        print("✅ Causal discovery imported successfully")
+        print("SUCCESS: Causal discovery imported successfully")
         
     except ImportError as e:
-        print(f"❌ Failed to import modules: {e}")
+        print(f" Failed to import modules: {e}")
         return False
     return True
 

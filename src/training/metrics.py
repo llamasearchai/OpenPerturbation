@@ -1115,7 +1115,7 @@ def compute_model_complexity_metrics(model: torch.nn.Module) -> Dict[str, float]
 def test_perturbation_prediction_metrics():
     """Test perturbation prediction metrics."""
 
-    print("🧪 Testing Perturbation Prediction Metrics...")
+    print("TEST: Testing Perturbation Prediction Metrics...")
 
     # Create dummy data
     batch_size = 32
@@ -1132,17 +1132,17 @@ def test_perturbation_prediction_metrics():
     # Compute metrics
     results = metrics.compute()
 
-    print(f"  ✅ MSE: {results['mse']:.4f}")
-    print(f"  ✅ MAE: {results['mae']:.4f}")
-    print(f"  ✅ R²: {results['r2']:.4f}")
-    print(f"  ✅ Pearson Correlation: {results['pearson_corr']:.4f}")
-    print(f"  ✅ Effect Magnitude Accuracy: {results['effect_magnitude_accuracy']:.4f}")
+    print(f"  SUCCESS: MSE: {results['mse']:.4f}")
+    print(f"  SUCCESS: MAE: {results['mae']:.4f}")
+    print(f"  SUCCESS: R²: {results['r2']:.4f}")
+    print(f"  SUCCESS: Pearson Correlation: {results['pearson_corr']:.4f}")
+    print(f"  SUCCESS: Effect Magnitude Accuracy: {results['effect_magnitude_accuracy']:.4f}")
 
 
 def test_causal_discovery_metrics():
     """Test causal discovery metrics."""
 
-    print("🧪 Testing Causal Discovery Metrics...")
+    print("TEST: Testing Causal Discovery Metrics...")
 
     # Create dummy causal graphs
     batch_size = 4
@@ -1167,16 +1167,16 @@ def test_causal_discovery_metrics():
     # Compute metrics
     results = metrics.compute()
 
-    print(f"  ✅ Edge Precision: {results['causal/edge_precision']:.4f}")
-    print(f"  ✅ Edge Recall: {results['causal/edge_recall']:.4f}")
-    print(f"  ✅ Edge F1: {results['causal/edge_f1']:.4f}")
-    print(f"  ✅ Causal Score: {results['causal/causal_score']:.4f}")
+    print(f"  SUCCESS: Edge Precision: {results['causal/edge_precision']:.4f}")
+    print(f"  SUCCESS: Edge Recall: {results['causal/edge_recall']:.4f}")
+    print(f"  SUCCESS: Edge F1: {results['causal/edge_f1']:.4f}")
+    print(f"  SUCCESS: Causal Score: {results['causal/causal_score']:.4f}")
 
 
 def test_classification_metrics():
     """Test classification metrics."""
 
-    print("🧪 Testing Classification Metrics...")
+    print("TEST: Testing Classification Metrics...")
 
     # Create dummy classification data
     batch_size = 64
@@ -1195,16 +1195,16 @@ def test_classification_metrics():
     # Compute metrics
     results = metrics.compute()
 
-    print(f"  ✅ Accuracy: {results['accuracy']:.4f}")
-    print(f"  ✅ Precision: {results['precision']:.4f}")
-    print(f"  ✅ Recall: {results['recall']:.4f}")
-    print(f"  ✅ F1 Score: {results['f1']:.4f}")
+    print(f"  SUCCESS: Accuracy: {results['accuracy']:.4f}")
+    print(f"  SUCCESS: Precision: {results['precision']:.4f}")
+    print(f"  SUCCESS: Recall: {results['recall']:.4f}")
+    print(f"  SUCCESS: F1 Score: {results['f1']:.4f}")
 
 
 def test_uncertainty_metrics():
     """Test uncertainty quantification metrics."""
 
-    print("🧪 Testing Uncertainty Metrics...")
+    print("TEST: Testing Uncertainty Metrics...")
 
     # Create dummy data with correlated uncertainties and errors
     batch_size = 100
@@ -1225,15 +1225,15 @@ def test_uncertainty_metrics():
     # Compute metrics
     results = metrics.compute()
 
-    print(f"  ✅ Calibration Error: {results['calibration_error']:.4f}")
-    print(f"  ✅ Uncertainty Correlation: {results['uncertainty_correlation']:.4f}")
-    print(f"  ✅ Coverage Probability: {results['coverage_probability']:.4f}")
+    print(f"  SUCCESS: Calibration Error: {results['calibration_error']:.4f}")
+    print(f"  SUCCESS: Uncertainty Correlation: {results['uncertainty_correlation']:.4f}")
+    print(f"  SUCCESS: Coverage Probability: {results['coverage_probability']:.4f}")
 
 
 def test_interpretability_metrics():
     """Test biological interpretability metrics."""
 
-    print("🧪 Testing Interpretability Metrics...")
+    print("TEST: Testing Interpretability Metrics...")
 
     # Create dummy interpretability data
     batch_size = 16
@@ -1258,15 +1258,15 @@ def test_interpretability_metrics():
     # Compute metrics
     results = metrics.compute()
 
-    print(f"  ✅ Attention Entropy: {results['interpretability/attention_entropy']:.4f}")
-    print(f"  ✅ Concept Selectivity: {results['interpretability/concept_selectivity']:.4f}")
-    print(f"  ✅ Pathway Enrichment: {results['interpretability/pathway_enrichment']:.4f}")
+    print(f"  SUCCESS: Attention Entropy: {results['interpretability/attention_entropy']:.4f}")
+    print(f"  SUCCESS: Concept Selectivity: {results['interpretability/concept_selectivity']:.4f}")
+    print(f"  SUCCESS: Pathway Enrichment: {results['interpretability/pathway_enrichment']:.4f}")
 
 
 def test_metric_collection():
     """Test the complete metric collection."""
 
-    print("🧪 Testing Metric Collection...")
+    print("TEST: Testing Metric Collection...")
 
     # Configuration for metrics
     config = {
@@ -1310,17 +1310,17 @@ def test_metric_collection():
     # Compute all metrics
     all_results = metric_collection.compute()
 
-    print(f"  ✅ Computed {len(all_results)} metrics successfully")
+    print(f"  SUCCESS: Computed {len(all_results)} metrics successfully")
     for metric_name, value in list(all_results.items())[:10]:  # Show first 10
-        print(f"    📊 {metric_name}: {value:.4f}")
+        print(f"    STATS: {metric_name}: {value:.4f}")
 
 
 def run_all_metric_tests():
     """Run all metric tests."""
 
-    print("🧪" * 25)
+    print("TEST:" * 25)
     print("TESTING OPENPERTURBATIONS METRICS")
-    print("🧪" * 25)
+    print("TEST:" * 25)
 
     try:
         test_perturbation_prediction_metrics()
@@ -1341,10 +1341,10 @@ def run_all_metric_tests():
         test_metric_collection()
         print()
 
-        print("🎉 All metric tests passed successfully!")
+        print("COMPLETE: All metric tests passed successfully!")
 
     except Exception as e:
-        print(f"❌ Metric tests failed: {e}")
+        print(f" Metric tests failed: {e}")
         raise
 
 

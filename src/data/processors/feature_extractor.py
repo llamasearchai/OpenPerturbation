@@ -329,7 +329,7 @@ class ComprehensiveFeatureExtractor:
                              metadata_list: Optional[List[Dict]] = None) -> pd.DataFrame:
         """Extract features from a batch of images."""
         
-        print(f"🔬 Extracting features from {len(images)} images...")
+        print(f"RESEARCH: Extracting features from {len(images)} images...")
         
         all_features = []
         
@@ -346,11 +346,11 @@ class ComprehensiveFeatureExtractor:
                     print(f"  Processed {i + 1}/{len(images)} images")
                     
             except Exception as e:
-                print(f"⚠️ Error processing image {i}: {e}")
+                print(f"WARNING: Error processing image {i}: {e}")
                 continue
         
         if not all_features:
-            print("❌ No features extracted successfully")
+            print(" No features extracted successfully")
             return pd.DataFrame()
         
         # Convert to DataFrame
@@ -360,7 +360,7 @@ class ComprehensiveFeatureExtractor:
         self.feature_names = [col for col in features_df.columns if col != 'image_index']
         self._compute_feature_statistics(features_df)
         
-        print(f"✅ Feature extraction complete: {len(features_df)} samples, {len(self.feature_names)} features")
+        print(f"SUCCESS: Feature extraction complete: {len(features_df)} samples, {len(self.feature_names)} features")
         
         return features_df
     
@@ -891,7 +891,7 @@ class TextureFeatureExtractor:
                 features[f'{prefix}_glcm_{prop}_range'] = np.max(prop_values) - np.min(prop_values)
         
         except Exception as e:
-            print(f"⚠️ Error computing GLCM features: {e}")
+            print(f"WARNING: Error computing GLCM features: {e}")
             # Fill with zeros if computation fails
             for prop in ['contrast', 'dissimilarity', 'homogeneity', 'energy', 'correlation']:
                 features[f'{prefix}_glcm_{prop}_mean'] = 0.0
@@ -930,7 +930,7 @@ class TextureFeatureExtractor:
                 features[f'{prefix}_lbp_dominant_pattern_{i}'] = lbp_hist[pattern_idx]
         
         except Exception as e:
-            print(f"⚠️ Error computing LBP features: {e}")
+            print(f"WARNING: Error computing LBP features: {e}")
             # Fill with zeros if computation fails
             lbp_feature_names = ['uniformity', 'entropy', 'mean', 'std'] + [f'dominant_pattern_{i}' for i in range(3)]
             for feature_name in lbp_feature_names:
@@ -978,7 +978,7 @@ class TextureFeatureExtractor:
             features[f'{prefix}_gabor_max_response'] = np.max(all_responses)
         
         except Exception as e:
-            print(f"⚠️ Error computing Gabor features: {e}")
+            print(f"WARNING: Error computing Gabor features: {e}")
             # Fill with zeros if computation fails
             for i in range(len(frequencies) * len(angles)):
                 freq_idx = i // len(angles)
@@ -1025,7 +1025,7 @@ class TextureFeatureExtractor:
                 features[f'{prefix}_laws_{filter_name.lower()}_energy'] = texture_energy
         
         except Exception as e:
-            print(f"⚠️ Error computing Laws features: {e}")
+            print(f"WARNING: Error computing Laws features: {e}")
             # Fill with zeros if computation fails
             filter_names = ['l5l5', 'l5e5', 'e5l5', 'e5e5', 's5s5', 'r5r5', 'l5s5', 's5l5', 'e5s5', 's5e5']
             for filter_name in filter_names:

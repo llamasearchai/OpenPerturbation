@@ -216,7 +216,7 @@ def generate_test_report(results: Dict[str, bool]) -> None:
     print(f"\nSummary: {passed}/{total} tests passed")
     
     if passed == total:
-        print("🎉 All tests passed!")
+        print("COMPLETE: All tests passed!")
     else:
         print("❌ Some tests failed. Please check the output above.")
         sys.exit(1)

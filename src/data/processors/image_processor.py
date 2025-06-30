@@ -226,7 +226,7 @@ class CellularImageProcessor:
             return True
             
         except Exception as e:
-            print(f"⚠️ Quality control error: {e}")
+            print(f"WARNING: Quality control error: {e}")
             return False
     
     def _normalize_image(self, image: np.ndarray, metadata: Dict) -> np.ndarray:
@@ -313,7 +313,7 @@ class CellularImageProcessor:
             }
             
         except Exception as e:
-            print(f"⚠️ Segmentation error: {e}")
+            print(f"WARNING: Segmentation error: {e}")
             return {'mask': None, 'features': None}
     
     def _extract_cell_features(self, image: np.ndarray, markers: np.ndarray) -> List[Dict]:
@@ -388,7 +388,7 @@ class CellularImageProcessor:
     def compute_normalization_statistics(self, image_paths: List[Path]) -> Dict:
         """Compute global normalization statistics across dataset."""
         
-        print("📊 Computing global normalization statistics...")
+        print("STATS: Computing global normalization statistics...")
         
         channel_stats = {channel: {'values': []} for channel in self.channels}
         
@@ -407,7 +407,7 @@ class CellularImageProcessor:
                         channel_stats[channel_name]['values'].extend(channel_img.flatten())
             
             except Exception as e:
-                print(f"⚠️ Error processing {img_path}: {e}")
+                print(f"WARNING: Error processing {img_path}: {e}")
         
         # Compute percentiles for each channel
         for channel_name in self.channels:
@@ -459,7 +459,7 @@ class CellularImageProcessor:
                            batch_size: int = 32) -> List[Dict]:
         """Process multiple images in batches."""
         
-        print(f"🔄 Batch processing {len(image_paths)} images...")
+        print(f"CYCLE: Batch processing {len(image_paths)} images...")
         
         processed_results = []
         
@@ -480,14 +480,14 @@ class CellularImageProcessor:
                         batch_results.append(result)
                 
                 except Exception as e:
-                    print(f"⚠️ Error processing {img_path}: {e}")
+                    print(f"WARNING: Error processing {img_path}: {e}")
             
             processed_results.extend(batch_results)
             
             if (i // batch_size + 1) % 10 == 0:
                 print(f"  Processed {i + len(batch_paths)}/{len(image_paths)} images")
         
-        print(f"  ✅ Successfully processed {len(processed_results)}/{len(image_paths)} images")
+        print(f"  SUCCESS: Successfully processed {len(processed_results)}/{len(image_paths)} images")
         return processed_results
     
     def create_image_montage(self, 
@@ -835,7 +835,7 @@ class ImageQualityController:
                 quality_metrics = self.assess_image_quality(image)
                 quality_results.append(quality_metrics)
             except Exception as e:
-                print(f"⚠️ Error assessing quality for image {i}: {e}")
+                print(f"WARNING: Error assessing quality for image {i}: {e}")
                 quality_results.append({
                     'passes_qc': False,
                     'error': str(e)
@@ -1048,7 +1048,7 @@ class CellularFeatureExtractor:
             return texture_features
             
         except Exception as e:
-            print(f"⚠️ Error computing texture features: {e}")
+            print(f"WARNING: Error computing texture features: {e}")
             return {}
     
     def _compute_spatial_features(self, 
@@ -1091,7 +1091,7 @@ class CellularFeatureExtractor:
                 features['spatial_morans_i'] = self._compute_morans_i(centroids, intensities)
         
         except Exception as e:
-            print(f"⚠️ Error computing spatial features: {e}")
+            print(f"WARNING: Error computing spatial features: {e}")
         
         return features
     
@@ -1167,7 +1167,7 @@ class CellularFeatureExtractor:
             return morans_i
             
         except Exception as e:
-            print(f"⚠️ Error computing Moran's I: {e}")
+            print(f"WARNING: Error computing Moran's I: {e}")
             return 0.0
     
     def _compute_skewness(self, data: np.ndarray) -> float:
@@ -1213,7 +1213,7 @@ class MultiChannelNormalizer:
     def fit(self, images: List[np.ndarray]) -> None:
         """Fit normalizer on training data."""
         
-        print("📊 Computing normalization statistics...")
+        print("STATS: Computing normalization statistics...")
         
         # Initialize statistics storage
         for channel in self.channels:
@@ -1346,7 +1346,7 @@ class ImageDataValidator:
     def validate_image_batch(self, image_paths: List[Path]) -> Dict:
         """Validate a batch of images."""
         
-        print(f"🔍 Validating {len(image_paths)} images...")
+        print(f"SEARCH: Validating {len(image_paths)} images...")
         
         validation_results = {
             'total_images': len(image_paths),
@@ -1378,7 +1378,7 @@ class ImageDataValidator:
             except Exception as e:
                 validation_results['invalid_images'] += 1
                 error_counts[f'processing_error'] = error_counts.get('processing_error', 0) + 1
-                print(f"⚠️ Error validating {img_path}: {e}")
+                print(f"WARNING: Error validating {img_path}: {e}")
         
         validation_results['errors'] = error_counts
         
@@ -1389,7 +1389,7 @@ class ImageDataValidator:
             'most_common_errors': sorted(error_counts.items(), key=lambda x: x[1], reverse=True)[:5]
         }
         
-        print(f"  ✅ Validation complete: {validation_results['valid_images']}/{validation_results['total_images']} "
+        print(f"  SUCCESS: Validation complete: {validation_results['valid_images']}/{validation_results['total_images']} "
               f"({valid_fraction:.1%}) images passed validation")
         
         return validation_results
