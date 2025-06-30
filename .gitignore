@@ -186,8 +186,19 @@ docker-compose.override.yml
 *.p12
 .env.local
 .env.*.local
+.env.production
+.env.staging
+.env.development
 secrets.yaml
+secrets.yml
 credentials.json
+config.json
+auth.json
+*.token
+*.secret
+api_keys.txt
+.secrets/
+.credentials/
 
 # Backup files
 *.bak

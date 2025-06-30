@@ -170,16 +170,20 @@ OpenPerturbation relies on certain external service API tokens (for example, Ope
 1. Copy `.env.example` to `.env` at the repository root.
 2. Populate the required variables:
 
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit with your actual API key
+OPENAI_API_KEY=sk-your-actual-api-key-here
 ```
-OPENAI_API_KEY=sk-...
-```
 
-3. Never commit the `.env` file to version control. The file path is included in `.gitignore`.
+3. **Never commit the `.env` file to version control.** The file path is included in `.gitignore`.
 
-At runtime the key is resolved in this order of precedence:
+**API Key Resolution Priority:**
 
-1. Explicit argument passed to `OpenPerturbationAgent`.
-2. `OPENAI_API_KEY` exported in the environment.
-3. `OPENAI_API_KEY` loaded from `.env` via `python-dotenv`.
+1. Explicit argument passed to `OpenPerturbationAgent(api_key="...")`
+2. `OPENAI_API_KEY` environment variable
+3. `OPENAI_API_KEY` from `.env` file via `python-dotenv`
 
 If no key is detected, the agent will safely switch to mock mode without external calls.

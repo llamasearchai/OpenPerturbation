@@ -2,125 +2,184 @@
 
 ## Supported Versions
 
-We actively support the following versions of OpenPerturbation:
+We actively support the following versions of OpenPerturbation with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 1.1.x   | ✅ Yes             |
+| 1.0.x   | ✅ Yes             |
+| < 1.0   | ❌ No              |
+
+## API Key and Secrets Management
+
+### Environment Variables
+
+OpenPerturbation uses environment variables for sensitive configuration. **Never hardcode API keys or secrets in your code.**
+
+#### Secure Setup Process
+
+1. **Copy the example environment file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` with your actual values:**
+   ```bash
+   # Required for AI-powered features
+   OPENAI_API_KEY=sk-your-actual-api-key-here
+   
+   # Optional: Database connections
+   DATABASE_URL=postgresql://user:password@localhost:5432/db
+   ```
+
+3. **Verify `.env` is in `.gitignore`:**
+   ```bash
+   grep -q "^\.env$" .gitignore && echo "✅ .env is ignored" || echo "❌ Add .env to .gitignore"
+   ```
+
+#### Production Deployment
+
+For production environments:
+
+- **Use environment variables directly** (not `.env` files)
+- **Use secrets management services** (AWS Secrets Manager, Azure Key Vault, etc.)
+- **Rotate API keys regularly** (every 90 days minimum)
+- **Use least-privilege access** for service accounts
+
+#### Key Resolution Priority
+
+The system resolves API keys in this order:
+
+1. **Explicit constructor argument** (for testing only)
+2. **Environment variable** (`OPENAI_API_KEY`)
+3. **`.env` file** (development only)
+4. **Fallback to mock mode** (safe degradation)
+
+### Container Security
+
+When using Docker:
+
+```dockerfile
+# Use build-time args for non-secret config only
+ARG APP_VERSION=1.1.0
+
+# Use runtime environment for secrets
+ENV OPENAI_API_KEY=""
+```
+
+```bash
+# Pass secrets at runtime
+docker run -e OPENAI_API_KEY="$OPENAI_API_KEY" openperturbation
+```
+
+### CI/CD Security
+
+For GitHub Actions and other CI systems:
+
+- Store secrets in repository/organization secrets
+- Use encrypted secrets, never plain text
+- Limit secret access to specific branches/environments
+- Audit secret usage regularly
 
 ## Reporting a Vulnerability
 
-We take the security of OpenPerturbation seriously. If you discover a security vulnerability, please follow these steps:
+We take security vulnerabilities seriously. Please follow responsible disclosure:
 
-### Private Disclosure Process
+### How to Report
 
-1. **Do not** create a public GitHub issue for security vulnerabilities
-2. Send an email to **nikjois@llamasearch.ai** with:
-   - A clear description of the vulnerability
-   - Steps to reproduce the issue
+1. **Email:** Send details to [nikjois@llamasearch.ai](mailto:nikjois@llamasearch.ai)
+2. **Subject:** Use "SECURITY: [Brief Description]"
+3. **Include:**
+   - Vulnerability description
+   - Steps to reproduce
    - Potential impact assessment
-   - Any suggested fixes (if available)
+   - Suggested fix (if known)
 
-### Response Timeline
+### What to Expect
 
-- **Initial Response**: Within 48 hours of report
-- **Status Update**: Within 7 days with preliminary assessment
-- **Resolution**: Target 30 days for critical issues, 90 days for others
+- **Initial Response:** Within 48 hours
+- **Investigation:** 1-7 days depending on complexity
+- **Fix Timeline:** Critical issues within 7 days, others within 30 days
+- **Disclosure:** Coordinated disclosure after fix is available
 
-### Disclosure Policy
+### Scope
 
-We follow coordinated disclosure:
-- We will work with you to understand and resolve the issue
-- We will acknowledge your contribution (with your permission)
-- We will not pursue legal action against good-faith security researchers
+Security issues we consider in scope:
 
-### Security Best Practices
+- ✅ API key exposure or leakage
+- ✅ Authentication/authorization bypasses
+- ✅ Code injection vulnerabilities
+- ✅ Privilege escalation
+- ✅ Data exposure or corruption
+- ✅ Denial of service attacks
 
-When using OpenPerturbation in production:
-- Keep dependencies updated
-- Use HTTPS for all API communications
-- Implement proper authentication and authorization
-- Monitor logs for suspicious activity
-- Follow the principle of least privilege
+Out of scope:
 
-### Contact
+- ❌ Social engineering attacks
+- ❌ Physical security issues
+- ❌ Issues in third-party dependencies (report to them directly)
+- ❌ Self-inflicted issues from misconfigurations
 
-For security-related questions: **nikjois@llamasearch.ai**
+## Security Best Practices
 
----
+### For Developers
 
-**Author**: Nik Jois  
-**Email**: nikjois@llamasearch.ai
+1. **Never commit secrets** to version control
+2. **Use type hints** for security-sensitive functions
+3. **Validate all inputs** from external sources
+4. **Use parameterized queries** for database operations
+5. **Enable logging** for security events
+6. **Keep dependencies updated** regularly
 
-## Security Features
+### For Users
 
-OpenPerturbation includes several built-in security features:
+1. **Use strong, unique API keys** for each environment
+2. **Enable two-factor authentication** on all accounts
+3. **Regularly audit** API key usage and permissions
+4. **Monitor logs** for suspicious activity
+5. **Use HTTPS** for all API communications
+6. **Implement rate limiting** in production
 
-### API Security
-- **Input Validation**: All API inputs are validated using Pydantic models
-- **Rate Limiting**: Built-in rate limiting to prevent abuse
-- **CORS Configuration**: Configurable CORS policies
-- **Request Size Limits**: Maximum request size limits to prevent DoS attacks
-- **Error Handling**: Secure error messages that don't leak sensitive information
+### Code Security
 
-### Data Security
-- **File Upload Validation**: Strict validation of uploaded files
-- **Path Traversal Protection**: Prevention of directory traversal attacks
-- **Temporary File Cleanup**: Automatic cleanup of temporary files
-- **Data Sanitization**: Input sanitization for all user-provided data
+```python
+# ✅ Good: Secure API key handling
+from openperturbation.agents import OpenPerturbationAgent
 
-### Infrastructure Security
-- **Docker Security**: Multi-stage Docker builds with minimal attack surface
-- **Non-root User**: Container runs as non-root user
-- **Dependency Scanning**: Automated vulnerability scanning of dependencies
-- **Security Headers**: Appropriate security headers in HTTP responses
+# Key resolved from environment/config
+agent = OpenPerturbationAgent()
 
-## Vulnerability Disclosure Timeline
+# ❌ Bad: Hardcoded secrets
+agent = OpenPerturbationAgent(api_key="sk-hardcoded-key")
+```
 
-We follow a coordinated disclosure timeline:
+## Security Monitoring
 
-1. **Day 0**: Vulnerability reported
-2. **Day 1-3**: Initial assessment and acknowledgment
-3. **Day 3-7**: Detailed analysis and fix development
-4. **Day 7-14**: Testing and validation of fix
-5. **Day 14-21**: Release preparation and coordination
-6. **Day 21**: Public disclosure and release
+We recommend implementing:
 
-## Security Contact
+- **API rate limiting** (built into FastAPI endpoints)
+- **Request logging** with sanitized sensitive data
+- **Error monitoring** (Sentry integration available)
+- **Dependency scanning** (automated via GitHub Actions)
 
-For security-related questions or concerns:
+## Compliance
 
-- **Email**: nikjois@llamasearch.ai
-- **Subject**: [SECURITY] OpenPerturbation Security Issue
-- **PGP Key**: Available upon request
+OpenPerturbation is designed to support:
 
-## Bug Bounty Program
+- **GDPR** compliance for EU data processing
+- **HIPAA** guidelines for healthcare data (with proper configuration)
+- **SOC 2** controls for service organizations
+- **ISO 27001** information security standards
 
-While we don't currently offer monetary rewards, we do offer:
+## Security Updates
 
-- Public acknowledgment of your contribution (if desired)
-- Direct communication with the development team
-- Early access to new features and releases
-- Contribution to the security of the scientific computing community
-
-## Legal
-
-This security policy is provided under the same MIT license as the OpenPerturbation project. By reporting vulnerabilities, you agree to:
-
-- Give us reasonable time to investigate and mitigate the issue before public disclosure
-- Make a good faith effort to avoid privacy violations, destruction of data, and interruption or degradation of services
-- Only interact with accounts you own or with explicit permission of the account holder
-
-## Acknowledgments
-
-We would like to thank the following security researchers for their responsible disclosure:
-
-*(No reports received yet - be the first!)*
+- Subscribe to GitHub releases for security announcements
+- Enable Dependabot alerts for dependency vulnerabilities
+- Follow [@OpenPerturbation](https://twitter.com/openperturbation) for security advisories
 
 ---
 
-**Last Updated**: January 20, 2024  
-**Version**: 1.0
+**Last Updated:** January 18, 2025  
+**Version:** 1.1.0
 
 For general questions about OpenPerturbation, please use the [GitHub Issues](https://github.com/llamasearchai/OpenPerturbation/issues) page. 
