@@ -433,8 +433,11 @@ class FeatureExtractor:
                         trans_sample = trans_flat[:min_length]
                         image_sample = image_flat[:min_length]
                         
-                        # Fix the tuple type conversion issue
-                        correlation_result: Tuple[float, float] = stats.pearsonr(trans_sample, image_sample)  # type: ignore[arg-type]
+                        # Pyright: SciPy returns a specialised object in >=1.11; type stubs lag behind
+                        correlation_result = stats.pearsonr(  # type: ignore[arg-type]
+                            trans_sample.astype(np.float64),
+                            image_sample.astype(np.float64)
+                        )
                         # Extract correlation coefficient safely
                         if hasattr(correlation_result, 'correlation'):
                             # New scipy version returns object with .correlation attribute
