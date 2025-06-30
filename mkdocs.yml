@@ -8,6 +8,7 @@ copyright: "Copyright © 2025 Nik Jois"
 
 nav:
   - Home: index.md
+  - Master Docs: master.md
   - Quick Start: quick_start.md
   - API Reference: api_reference.md
   - Deployment: deployment.md
@@ -43,4 +44,9 @@ markdown_extensions:
       permalink: "§"
 
 plugins:
-  - search 
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          setup_commands:
+            - "import sys, os; sys.path.append('src')" 
