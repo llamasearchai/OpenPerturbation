@@ -15,8 +15,8 @@ pandas>=2.0.0
 numpy>=1.24.0,<2.0.0
 
 # Scientific computing (fixed versions for compatibility)
-scipy>=1.10.0,<1.12.0
-scikit-learn>=1.3.0,<1.4.0
+scipy>=1.13.0
+scikit-learn>=1.5.0
 scikit-image>=0.21.0,<0.23.0
 
 # Deep learning and ML
