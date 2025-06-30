@@ -694,7 +694,7 @@ class PerturbationDataModule(pl.LightningDataModule):
 
         # Create synthetic imaging data
         if self.imaging_config.get("create_synthetic", False):
-            from ..data.synthetic.cell_simulator import create_synthetic_imaging_data
+            from ..data.loaders.imaging_loader import create_synthetic_imaging_data
 
             imaging_dir = self.data_dir / "imaging"
             imaging_dir.mkdir(parents=True, exist_ok=True)
@@ -703,7 +703,7 @@ class PerturbationDataModule(pl.LightningDataModule):
 
         # Create synthetic genomics data
         if self.genomics_config.get("create_synthetic", False):
-            from ..data.synthetic.perturbation_generator import create_synthetic_genomics_data
+            from ..data.loaders.genomics_loader import create_synthetic_genomics_data
 
             genomics_dir = self.data_dir / "genomics"
             genomics_dir.mkdir(parents=True, exist_ok=True)

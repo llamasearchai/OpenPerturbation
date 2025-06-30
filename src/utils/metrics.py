@@ -1,4 +1,8 @@
-def calculate_p_value(observed: float, baseline: np.ndarray) -> float:
+import numpy as np
+from numpy.typing import NDArray
+from typing import Union
+
+def calculate_p_value(observed: float, baseline: NDArray) -> float:
     """Calculate empirical p-value"""
     if len(baseline) == 0:
         return 1.0
@@ -8,5 +12,6 @@ def calculate_p_value(observed: float, baseline: np.ndarray) -> float:
     if len(baseline) == 0:
         return 1.0
     
-    # Calculate p-value
-    return np.mean(baseline >= observed) 
+    # Calculate p-value and ensure float return type
+    p_value = np.mean(baseline >= observed)
+    return float(p_value)  # Explicit conversion to Python float 

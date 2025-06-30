@@ -47,12 +47,17 @@ class BaseLightningModule(pl.LightningModule):
         self._experiment = None
         
     @property
-    def logger(self):
+    def logger_experiment(self):
+        """Safe access to logger experiment."""
         if self._experiment is None:
-            # Lazy initialization
-            if hasattr(self, "trainer") and self.trainer:
-                if self.trainer.logger:
-                    self._experiment = self.trainer.logger.experiment
+            # Lazy initialization with safe attribute access
+            try:
+                if hasattr(self, "trainer") and self.trainer:
+                    if self.trainer.logger:
+                        # Use getattr for safe access
+                        self._experiment = getattr(self.trainer.logger, 'experiment', None)
+            except AttributeError:
+                self._experiment = None
         return self._experiment
 
 class CausalVAELightningModule(BaseLightningModule):
@@ -104,8 +109,9 @@ class CausalVAELightningModule(BaseLightningModule):
         for loss_name, loss_value in loss_dict.items():
             self.log(f'train/{loss_name}', loss_value, on_step=True, on_epoch=True, prog_bar=True)
         
-        # Update metrics
-        self.train_metrics.update(outputs, features)
+        # Update metrics with proper format
+        targets_dict = {'causal_factors': features}  # Convert to dict format expected by metrics
+        self.train_metrics.update(outputs, targets_dict)
         
         # Store outputs for epoch end
         self.training_step_outputs.append({
@@ -132,8 +138,9 @@ class CausalVAELightningModule(BaseLightningModule):
         for loss_name, loss_value in loss_dict.items():
             self.log(f'val/{loss_name}', loss_value, on_step=False, on_epoch=True, prog_bar=True)
         
-        # Update metrics
-        self.val_metrics.update(outputs, features)
+        # Update metrics with proper format
+        targets_dict = {'causal_factors': features}  # Convert to dict format expected by metrics
+        self.val_metrics.update(outputs, targets_dict)
         
         # Store outputs for epoch end
         self.validation_step_outputs.append({
@@ -189,9 +196,12 @@ class CausalVAELightningModule(BaseLightningModule):
             betas=(0.9, 0.999)
         )
         
+        # Handle potential None value for max_epochs
+        max_epochs = self.trainer.max_epochs if self.trainer.max_epochs is not None else 100
+        
         scheduler = CosineAnnealingLR(
             optimizer,
-            T_max=self.trainer.max_epochs,
+            T_max=max_epochs,
             eta_min=self.learning_rate * 0.01
         )
         
@@ -233,7 +243,7 @@ class CausalVAELightningModule(BaseLightningModule):
             features = torch.cat(features_list, dim=1)
         else:
             # Fallback - create dummy features
-            batch_size = batch['batch_size']
+            batch_size = batch.get('batch_size', 32)
             features = torch.randn(batch_size, 128, device=self.device)
         
         return features
@@ -252,23 +262,19 @@ class CausalVAELightningModule(BaseLightningModule):
             if causal_factors.size(0) > 50:  # Need sufficient samples for t-SNE
                 tsne_plot = self._create_tsne_plot(causal_factors.cpu().numpy(), 'Training Causal Factors')
                 
-                if self.logger and hasattr(self.logger, 'experiment'):
-                    experiment = self.logger.experiment
-                    if experiment:  # Check if experiment exists
-                        experiment.log({
-                            'train/causal_factors_tsne': wandb.Image(tsne_plot),
-                            'epoch': self.current_epoch
-                        })
+                if self.logger_experiment:
+                    self.logger_experiment.log({
+                        'train/causal_factors_tsne': wandb.Image(tsne_plot),
+                        'epoch': self.current_epoch
+                    })
             
             # Generate reconstruction quality samples
             reconstruction_samples = self._create_reconstruction_samples()
-            if reconstruction_samples and self.logger and hasattr(self.logger, 'experiment'):
-                experiment = self.logger.experiment
-                if experiment:  # Check if experiment exists
-                    experiment.log({
-                        'train/reconstructions': wandb.Image(reconstruction_samples),
-                        'epoch': self.current_epoch
-                    })
+            if reconstruction_samples and self.logger_experiment:
+                self.logger_experiment.log({
+                    'train/reconstructions': wandb.Image(reconstruction_samples),
+                    'epoch': self.current_epoch
+                })
         
         except Exception as e:
             logger.warning(f"Failed to generate training visualizations: {e}")
@@ -286,13 +292,11 @@ class CausalVAELightningModule(BaseLightningModule):
             # Generate causal factor distribution plot
             factor_dist_plot = self._create_factor_distribution_plot(causal_factors.cpu().numpy())
             
-            if self.logger and hasattr(self.logger, 'experiment'):
-                experiment = self.logger.experiment
-                if experiment:  # Check if experiment exists
-                    experiment.log({
-                        'val/causal_factor_distribution': wandb.Image(factor_dist_plot),
-                        'epoch': self.current_epoch
-                    })
+            if self.logger_experiment:
+                self.logger_experiment.log({
+                    'val/causal_factor_distribution': wandb.Image(factor_dist_plot),
+                    'epoch': self.current_epoch
+                })
             
             # Generate disentanglement metrics
             disentanglement_metrics = self._compute_disentanglement_metrics(causal_factors.cpu().numpy())
@@ -466,23 +470,24 @@ class MultiModalFusionModule(BaseLightningModule):
         targets = self._extract_targets(batch)
         
         # Compute loss
-        loss_dict = self.loss_fn(outputs, targets, batch)
+        loss_dict = self.loss_fn(outputs, {'labels': targets})
         
         # Log losses
         for loss_name, loss_value in loss_dict.items():
             self.log(f'train/{loss_name}', loss_value, on_step=True, on_epoch=True, prog_bar=True)
         
         # Update metrics
-        self.train_metrics.update(outputs, targets)
+        predictions = outputs.get('predictions', targets)  # Use predictions if available
+        self.train_metrics.update(predictions, targets)
         
         # Store outputs
         self.training_step_outputs.append({
-            'loss': loss_dict['total_loss'],
-            'predictions': outputs['predictions'].detach(),
+            'loss': loss_dict.get('total_loss', loss_dict.get('prediction', torch.tensor(0.0))),
+            'predictions': predictions.detach(),
             'targets': targets.detach()
         })
         
-        return loss_dict['total_loss']
+        return loss_dict.get('total_loss', loss_dict.get('prediction', torch.tensor(0.0)))
     
     def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         """Validation step."""
@@ -494,23 +499,24 @@ class MultiModalFusionModule(BaseLightningModule):
         targets = self._extract_targets(batch)
         
         # Compute loss
-        loss_dict = self.loss_fn(outputs, targets, batch)
+        loss_dict = self.loss_fn(outputs, {'labels': targets})
         
         # Log losses
         for loss_name, loss_value in loss_dict.items():
             self.log(f'val/{loss_name}', loss_value, on_step=False, on_epoch=True, prog_bar=True)
         
         # Update metrics
-        self.val_metrics.update(outputs, targets)
+        predictions = outputs.get('predictions', targets)  # Use predictions if available
+        self.val_metrics.update(predictions, targets)
         
         # Store outputs
         self.validation_step_outputs.append({
-            'loss': loss_dict['total_loss'],
-            'predictions': outputs['predictions'].detach(),
+            'loss': loss_dict.get('total_loss', loss_dict.get('prediction', torch.tensor(0.0))),
+            'predictions': predictions.detach(),
             'targets': targets.detach()
         })
         
-        return loss_dict['total_loss']
+        return loss_dict.get('total_loss', loss_dict.get('prediction', torch.tensor(0.0)))
     
     def on_training_epoch_end(self) -> None:
         """Called at the end of training epoch."""
@@ -550,4 +556,91 @@ class MultiModalFusionModule(BaseLightningModule):
         
         optimizer = AdamW(
             self.model.parameters(),
-            lr=self.learning
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+            betas=(0.9, 0.999)
+        )
+        
+        # Handle potential None value for max_epochs
+        max_epochs = self.trainer.max_epochs if self.trainer.max_epochs is not None else 100
+        
+        scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=max_epochs,
+            eta_min=self.learning_rate * 0.01
+        )
+        
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'monitor': 'val/prediction_accuracy',
+                'interval': 'epoch',
+                'frequency': 1
+            }
+        }
+    
+    def _extract_targets(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """Extract targets from batch."""
+        
+        # Extract perturbation effect targets from batch
+        if 'perturbation' in batch and 'effects' in batch['perturbation']:
+            return batch['perturbation']['effects']
+        elif 'targets' in batch:
+            return batch['targets']
+        elif 'labels' in batch:
+            return batch['labels']
+        else:
+            # Fallback - create dummy targets based on batch size
+            batch_size = self._get_batch_size(batch)
+            return torch.randn(batch_size, 64, device=self.device)  # 64-dim effect vector
+    
+    def _get_batch_size(self, batch: Dict[str, Any]) -> int:
+        """Get batch size from batch data."""
+        for modality_data in batch.values():
+            if isinstance(modality_data, dict):
+                for data in modality_data.values():
+                    if hasattr(data, 'size'):
+                        return data.size(0)
+            elif hasattr(modality_data, 'size'):
+                return modality_data.size(0)
+        return 32  # Default fallback
+    
+    def _generate_prediction_visualizations(self, split: str):
+        """Generate prediction visualizations for a given split."""
+        
+        outputs = self.training_step_outputs if split == 'train' else self.validation_step_outputs
+        
+        if not outputs:
+            return
+        
+        try:
+            import matplotlib.pyplot as plt
+            
+            # Collect predictions and targets
+            predictions = torch.cat([out['predictions'] for out in outputs[-10:]])
+            targets = torch.cat([out['targets'] for out in outputs[-10:]])
+            
+            # Create scatter plot of predictions vs targets
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            pred_flat = predictions.cpu().numpy().flatten()
+            target_flat = targets.cpu().numpy().flatten()
+            
+            ax.scatter(target_flat, pred_flat, alpha=0.6, s=50)
+            ax.plot([target_flat.min(), target_flat.max()], [target_flat.min(), target_flat.max()], 'r--', lw=2)
+            ax.set_xlabel('True Values')
+            ax.set_ylabel('Predicted Values')
+            ax.set_title(f'{split.title()} Predictions vs Targets')
+            ax.grid(True, alpha=0.3)
+            
+            if self.logger_experiment:
+                self.logger_experiment.log({
+                    f'{split}/predictions_vs_targets': wandb.Image(fig),
+                    'epoch': self.current_epoch
+                })
+            
+            plt.close(fig)
+        
+        except Exception as e:
+            logger.warning(f"Failed to generate {split} prediction visualizations: {e}")

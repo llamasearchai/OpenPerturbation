@@ -61,4 +61,16 @@ async def health_check() -> Dict[str, Any]:
             "causal_discovery": "available",
             "database": "connected"
         }
-    } 
+    }
+
+@router.post("/causal/discovery", response_model=Dict[str, Any])
+async def run_causal_discovery_alias(request: CausalDiscoveryRequest) -> Dict[str, Any]:
+    return await run_causal_discovery(request)
+
+@router.post("/intervention/design", response_model=Dict[str, Any])
+async def design_interventions_alias(request: InterventionDesignRequest) -> Dict[str, Any]:
+    return await design_interventions(request)
+
+@router.post("/explainability/analyze", response_model=Dict[str, Any])
+async def run_explainability_alias(request: ExplainabilityRequest) -> Dict[str, Any]:
+    return await run_explainability_analysis(request) 

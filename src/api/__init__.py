@@ -6,7 +6,11 @@ Email: nikjois@llamasearch.ai
 """
 
 # Import only the names that should be exported
-from .endpoints import router
+# Expose the consolidated API router
+try:
+    from .routes import api_router as router  # noqa: F401
+except ImportError:  # Fallback if routes package missing during minimal envs
+    router = None
 from .middleware import setup_middleware
 from .app_factory import create_app
 
@@ -28,8 +32,7 @@ def get_create_app():
     return create_app
 
 def get_router():
-    """Get the API router."""
-    from .endpoints import router
+    """Get the API router (if available)."""
     return router
 
 def get_middleware_setup():

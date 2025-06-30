@@ -29,7 +29,7 @@ async def start_analysis_job(request: AnalysisRequest):
         "created_at": datetime.utcnow().isoformat(),
         "updated_at": datetime.utcnow().isoformat(),
     }
-    return {"job_id": job_id, "status": "started", "message": "Analysis job queued"}
+    return {"job_id": job_id, "status": "queued", "message": "Analysis started successfully"}
 
 @router.get("/{job_id}/status", response_model=Dict[str, Any])
 async def get_analysis_status(job_id: str):
@@ -47,7 +47,12 @@ async def get_analysis_status(job_id: str):
             job["results"] = {"summary": "Mock analysis results"}
         job["updated_at"] = datetime.utcnow().isoformat()
 
-    return job
+    return {
+        "id": job_id,
+        "status": job["status"],
+        "progress": job["progress"],
+        "results": job["results"],
+    }
 
 @router.delete("/{job_id}", response_model=Dict[str, Any])
 async def cancel_job(job_id: str):

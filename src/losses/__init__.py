@@ -8,4 +8,7 @@ Email: nikjois@llamasearch.ai
 from .causal_losses import CausalVAELoss
 from .fusion_losses import MultiModalFusionLoss
 
-__all__ = ['CausalVAELoss', 'MultiModalFusionLoss'] 
+# Import ContrastiveLoss from training losses for compatibility
+from ..training.losses import ContrastiveLoss
+
+__all__ = ['CausalVAELoss', 'MultiModalFusionLoss', 'ContrastiveLoss'] 
