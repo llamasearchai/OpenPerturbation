@@ -2,16 +2,16 @@
   <rect width="512" height="512" fill="none"/>
 
   <!-- Central symbol: causal rings -->
-  <circle cx="256" cy="256" r="96" stroke="black" stroke-width="16" fill="none"/>
-  <circle cx="256" cy="256" r="64" stroke="black" stroke-width="12" fill="none"/>
-  <circle cx="256" cy="256" r="32" fill="black"/>
+  <circle cx="256" cy="256" r="96" stroke="#007ACC" stroke-width="16" fill="none"/>
+  <circle cx="256" cy="256" r="64" stroke="#007ACC" stroke-width="12" fill="none"/>
+  <circle cx="256" cy="256" r="32" fill="#007ACC"/>
 
   <!-- Perturbation arrow (causal direction) -->
-  <path d="M256 96 L256 160" stroke="black" stroke-width="8" stroke-linecap="round"/>
-  <polygon points="248,160 264,160 256,176" fill="black"/>
+  <path d="M256 96 L256 160" stroke="#007ACC" stroke-width="8" stroke-linecap="round"/>
+  <polygon points="248,160 264,160 256,176" fill="#007ACC"/>
 
   <!-- OpenPerturbation text (optional) -->
-  <text x="50%" y="490" font-family="Helvetica Neue, sans-serif" font-size="32" fill="black" text-anchor="middle" letter-spacing="0.5px">
+  <text x="50%" y="490" font-family="Helvetica Neue, sans-serif" font-size="32" fill="#007ACC" text-anchor="middle" letter-spacing="0.5px">
     OpenPerturbation
   </text>
 </svg>

@@ -32,16 +32,16 @@ except ImportError:
 # Image processing - Handle all skimage imports with proper fallbacks
 try:
     # Import skimage modules individually to handle import resolution
-    from skimage import feature as skimage_feature
-    from skimage import measure as skimage_measure  
-    from skimage import filters as skimage_filters
-    from skimage import morphology as skimage_morphology
-    from skimage import io as skimage_io
+    from skimage import feature as skimage_feature  # type: ignore[import]
+    from skimage import measure as skimage_measure   # type: ignore[import]
+    from skimage import filters as skimage_filters   # type: ignore[import]
+    from skimage import morphology as skimage_morphology  # type: ignore[import]
+    from skimage import io as skimage_io  # type: ignore[import]
     
     # Import specific functions
-    from skimage.feature import greycomatrix, greycoprops, blob_log
-    from skimage.filters import threshold_otsu
-    from skimage.measure import label, regionprops
+    from skimage.feature import greycomatrix, greycoprops, blob_log  # type: ignore[import]
+    from skimage.filters import threshold_otsu  # type: ignore[import]
+    from skimage.measure import label, regionprops  # type: ignore[import]
     
     HAS_SKIMAGE = True
 except ImportError:
@@ -434,7 +434,7 @@ class FeatureExtractor:
                         image_sample = image_flat[:min_length]
                         
                         # Fix the tuple type conversion issue
-                        correlation_result = stats.pearsonr(trans_sample, image_sample)
+                        correlation_result: Tuple[float, float] = stats.pearsonr(trans_sample, image_sample)  # type: ignore[arg-type]
                         # Extract correlation coefficient safely
                         if hasattr(correlation_result, 'correlation'):
                             # New scipy version returns object with .correlation attribute
