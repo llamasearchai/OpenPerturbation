@@ -147,3 +147,6 @@ If you use OpenPerturbation in academic work, please cite:
 ## Contact & Hiring
 Created and maintained by **Nik Jois** ‹[nikjois@llamasearch.ai](mailto:nikjois@llamasearch.ai)›.  
 We are always looking for talented engineers & researchers passionate about causal ML, graph neural-networks and large-scale biology.  Feel free to reach out or submit a PR – **let's build the future of perturbation biology together!**
+
+## About
+See the full project background, vision and architecture in the [About](https://llamasearchai.github.io/OpenPerturbation/about/) section of the documentation.

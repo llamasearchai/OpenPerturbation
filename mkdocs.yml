@@ -13,6 +13,7 @@ nav:
   - Deployment: deployment.md
   - Contributing: contributing.md
   - Changelog: ../CHANGELOG.md
+  - About: about.md
 
 theme:
   name: material
