@@ -179,12 +179,7 @@ class StructuredLogger:
 
 def create_logging_config() -> Dict[str, Any]:
     """Create logging configuration dictionary."""
-    try:
-        from pythonjsonlogger.json import JsonFormatter
-    except ImportError:
-        JsonFormatter = None
-
-    config: Dict[str, Any] = {
+    return {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
@@ -202,6 +197,15 @@ def create_logging_config() -> Dict[str, Any]:
                     "CRITICAL": "red,bg_white",
                 }
             },
+            "json": {
+                "()": "logging_utilities.formatters.json_formatter.JsonFormatter",
+                "format": {
+                    "timestamp": "asctime",
+                    "level": "levelname",
+                    "name": "name",
+                    "message": "message"
+                }
+            }
         },
         "handlers": {
             "console": {
@@ -250,14 +254,6 @@ def create_logging_config() -> Dict[str, Any]:
             }
         },
     }
-
-    if JsonFormatter:
-        config["formatters"]["json"] = {
-            "()": "pythonjsonlogger.json.JsonFormatter",
-            "format": "%(timestamp)s %(level)s %(name)s %(message)s"
-        }
-
-    return config
 
 def setup_structured_logging(
     log_file: str = "logs/structured.log",
