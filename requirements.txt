@@ -1,37 +1,40 @@
 # OpenPerturbation API Server Requirements
 # Author: Nik Jois <nikjois@llamasearch.ai>
 
-# Core web framework
+# Core FastAPI and web framework
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
-
-# Data validation and serialization
 pydantic>=2.5.0
+python-multipart>=0.0.6
+aiofiles>=23.0.0
+httpx>=0.25.0
 
-# Configuration management
+# Configuration and data handling
 omegaconf>=2.3.0
-
-# Data processing
 pandas>=2.0.0
-numpy>=1.24.0
-scipy>=1.10.0
+numpy>=1.24.0,<2.0.0
 
-# Machine learning
+# Scientific computing (fixed versions for compatibility)
+scipy>=1.10.0,<1.12.0
+scikit-learn>=1.3.0,<1.4.0
+scikit-image>=0.21.0,<0.23.0
+
+# Deep learning and ML
 torch>=2.0.0
 torchvision>=0.15.0
-scikit-learn>=1.3.0
+lightning>=2.0.0
 
-# Causal discovery
+# Causal discovery and graph analysis
 causal-learn>=0.1.3.3
+networkx>=3.0
 
 # Biology and chemistry
 biopython>=1.81
-rdkit-pypi>=2022.9.5
+rdkit>=2022.9.5
 
-# Image processing
+# Image processing and computer vision
 Pillow>=10.0.0
 opencv-python>=4.8.0
-scikit-image>=0.21.0
 albumentations>=1.3.0
 
 # Visualization
@@ -40,16 +43,17 @@ seaborn>=0.12.0
 plotly>=5.15.0
 
 # Utilities
-python-multipart>=0.0.6
-aiofiles>=23.0.0
-httpx>=0.25.0
+psutil>=5.9.0
+tqdm>=4.65.0
+joblib>=1.3.0
 
 # Development and testing
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
 black>=23.9.0
 mypy>=1.6.0
+flake8>=6.0.0
 
-# Optional dependencies for production
-gunicorn>=21.2.0
-psutil>=5.9.0
+# Documentation
+mkdocs-material>=9.0.0

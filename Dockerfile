@@ -88,15 +88,57 @@ ENV DEBUG=true
 CMD ["python", "-m", "src.api.server", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # Production stage
-FROM base as production
+FROM python:3.11-slim as production
 
-# Set production environment
-ENV PYTHONPATH=/app/src
-ENV LOG_LEVEL=INFO
-ENV DEBUG=false
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    libhdf5-103 \
+    libopencv-core4.5 \
+    libopencv-imgproc4.5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Production command
-CMD ["python", "-m", "src.api.server", "--host", "0.0.0.0", "--port", "8000"]
+# Create non-root user for security
+RUN groupadd -r openpert && useradd -r -g openpert -s /bin/bash openpert
+
+# Set work directory
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
+COPY --chown=openpert:openpert . .
+
+# Create necessary directories
+RUN mkdir -p /app/uploads /app/outputs /app/logs && \
+    chown -R openpert:openpert /app
+
+# Install the package
+RUN pip install --no-deps -e .
+
+# Switch to non-root user
+USER openpert
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port
+EXPOSE 8000
+
+# Set environment variables
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OPENPERTURBATION_ENV=production \
+    WORKERS=4
+
+# Default command
+CMD ["python", "-m", "uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 
 # Testing stage
 FROM base as testing
