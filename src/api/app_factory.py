@@ -5,45 +5,77 @@ Author: Nik Jois
 Email: nikjois@llamasearch.ai
 """
 
-from fastapi import FastAPI
-from .middleware import setup_middleware
-from .routes import api_router
-from datetime import datetime
+import asyncio
+import datetime
+import logging
+from contextlib import asynccontextmanager
+from typing import Dict, Any, Optional
 
-def create_app() -> FastAPI:
-    """
-    Creates and configures the FastAPI application instance
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+# Import route modules
+from .routes import (
+    analysis,
+    configuration,
+    data,
+    datasets,
+    experiments,
+    jobs,
+    models,
+    system
+)
+
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    logger.info("Starting OpenPerturbation API...")
+    yield
+    logger.info("Shutting down OpenPerturbation API...")
+
+def create_app(config: Optional[Dict[str, Any]] = None) -> FastAPI:
+    """Create and configure the FastAPI application."""
     
-    Returns:
-        FastAPI: Configured application instance
-    """
     app = FastAPI(
         title="OpenPerturbation API",
-        description="Comprehensive REST API for perturbation biology analysis",
+        description="AI-Driven Perturbation Biology Analysis Platform",
         version="1.0.0",
-        docs_url="/docs",
-        redoc_url="/redoc"
+        lifespan=lifespan
     )
     
-    # Root endpoint
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
     @app.get("/")
-    async def root() -> dict[str, str]:
-        return {
-            "service": "OpenPerturbation API",
-            "version": "1.0.0",
-            "status": "running",
-        }
-
+    async def root():
+        return {"message": "OpenPerturbation API", "version": "1.0.0"}
+    
     @app.get("/health")
-    async def health() -> dict[str, str]:
+    async def health():
         return {
             "service": "OpenPerturbation API",
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "version": "1.0.0",
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat() + "Z",
         }
-
-    setup_middleware(app)
-    # Mount API v1
-    app.include_router(api_router, prefix="/api/v1")
+    
+    # Include route modules
+    app.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
+    app.include_router(configuration.router, prefix="/configuration", tags=["configuration"])
+    app.include_router(data.router, prefix="/data", tags=["data"])
+    app.include_router(datasets.router, prefix="/datasets", tags=["datasets"])
+    app.include_router(experiments.router, prefix="/experiments", tags=["experiments"])
+    app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
+    app.include_router(models.router, prefix="/models", tags=["models"])
+    app.include_router(system.router, prefix="/system", tags=["system"])
     
     return app 
