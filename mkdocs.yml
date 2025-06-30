@@ -1,0 +1,45 @@
+site_name: OpenPerturbation
+site_description: "Open-source platform for perturbation biology, causal discovery & optimal intervention design."
+site_author: "Nik Jois"
+site_url: https://llamasearchai.github.io/OpenPerturbation
+repo_url: https://github.com/llamasearchai/OpenPerturbation
+repo_name: llamasearchai/OpenPerturbation
+copyright: "Copyright © 2025 Nik Jois"
+
+nav:
+  - Home: index.md
+  - Quick Start: quick_start.md
+  - API Reference: api_reference.md
+  - Deployment: deployment.md
+  - Contributing: contributing.md
+  - Changelog: ../CHANGELOG.md
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.top
+    - search.highlight
+    - content.code.annotate
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+    - scheme: slate
+      primary: blue
+      accent: blue
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - footnotes
+  - pymdownx.details
+  - pymdownx.superfences
+  - toc:
+      permalink: "§"
+
+plugins:
+  - search 
