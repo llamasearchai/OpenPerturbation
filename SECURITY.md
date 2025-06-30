@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-We actively support the following versions of OpenPerturbation with security updates:
+We actively support the following versions of OpenPerturbation:
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -11,57 +11,47 @@ We actively support the following versions of OpenPerturbation with security upd
 
 ## Reporting a Vulnerability
 
-The OpenPerturbation team takes security seriously. We appreciate your efforts to responsibly disclose your findings.
+We take the security of OpenPerturbation seriously. If you discover a security vulnerability, please follow these steps:
 
-### How to Report
+### Private Disclosure Process
 
-**Please do NOT report security vulnerabilities through public GitHub issues.**
+1. **Do not** create a public GitHub issue for security vulnerabilities
+2. Send an email to **nikjois@llamasearch.ai** with:
+   - A clear description of the vulnerability
+   - Steps to reproduce the issue
+   - Potential impact assessment
+   - Any suggested fixes (if available)
 
-Instead, please report security vulnerabilities by emailing:
+### Response Timeline
 
-**nikjois@llamasearch.ai**
+- **Initial Response**: Within 48 hours of report
+- **Status Update**: Within 7 days with preliminary assessment
+- **Resolution**: Target 30 days for critical issues, 90 days for others
 
-Include the following information in your report:
-- Type of issue (e.g., XSS, SQL injection, remote code execution, etc.)
-- Full paths of source file(s) related to the manifestation of the issue
-- The location of the affected source code (tag/branch/commit or direct URL)
-- Any special configuration required to reproduce the issue
-- Step-by-step instructions to reproduce the issue
-- Proof-of-concept or exploit code (if possible)
-- Impact of the issue, including how an attacker might exploit it
+### Disclosure Policy
 
-### What to Expect
+We follow coordinated disclosure:
+- We will work with you to understand and resolve the issue
+- We will acknowledge your contribution (with your permission)
+- We will not pursue legal action against good-faith security researchers
 
-- **Acknowledgment**: We will acknowledge receipt of your vulnerability report within 48 hours.
-- **Initial Assessment**: We will provide an initial assessment within 72 hours.
-- **Regular Updates**: We will keep you informed about our progress throughout the process.
-- **Resolution Timeline**: We aim to resolve critical vulnerabilities within 7 days, high-severity issues within 30 days, and medium/low severity issues within 90 days.
+### Security Best Practices
 
-### Our Commitment
+When using OpenPerturbation in production:
+- Keep dependencies updated
+- Use HTTPS for all API communications
+- Implement proper authentication and authorization
+- Monitor logs for suspicious activity
+- Follow the principle of least privilege
 
-- We will respond to your report promptly and work with you to understand and resolve the issue quickly.
-- We will keep you informed about our progress throughout the process.
-- We will credit you for your discovery (unless you prefer to remain anonymous).
-- We will not pursue legal action against researchers who discover and report vulnerabilities responsibly.
+### Contact
 
-## Security Best Practices
+For security-related questions: **nikjois@llamasearch.ai**
 
-### For Users
+---
 
-1. **Keep Updated**: Always use the latest version of OpenPerturbation
-2. **Environment Variables**: Store sensitive configuration in environment variables, not in code
-3. **Network Security**: Run the API behind a reverse proxy (nginx, Apache) in production
-4. **Access Control**: Implement proper authentication and authorization for your deployment
-5. **HTTPS**: Always use HTTPS in production environments
-6. **Input Validation**: Validate all inputs when using the API programmatically
-
-### For Developers
-
-1. **Dependencies**: Regularly update dependencies and monitor for known vulnerabilities
-2. **Code Review**: All code changes require review before merging
-3. **Static Analysis**: Use security linters (bandit) as part of the CI/CD pipeline
-4. **Testing**: Include security testing in the test suite
-5. **Secrets**: Never commit secrets, API keys, or credentials to version control
+**Author**: Nik Jois  
+**Email**: nikjois@llamasearch.ai
 
 ## Security Features
 

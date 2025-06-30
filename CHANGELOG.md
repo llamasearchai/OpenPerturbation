@@ -1,9 +1,40 @@
 # Changelog
 
-All notable changes to the OpenPerturbation project will be documented in this file.
+All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2025-01-03
+
+### Added
+- Complete FastAPI REST API with 25+ endpoints for perturbation biology analysis
+- Causal discovery algorithms: PC, GES, LiNGAM, correlation-based methods
+- Multimodal feature extraction supporting transcriptomics and microscopy data
+- Intervention design and optimization framework
+- Explainability tools: attention maps, concept activation, pathway analysis
+- Docker containerization with docker-compose deployment
+- Comprehensive test suite with >90% coverage
+- Professional MkDocs documentation site with GitHub Pages deployment
+- Type-safe Python codebase with Pydantic v2 models
+- CI/CD pipeline with GitHub Actions
+- PyPI package distribution
+
+### Technical Details
+- Python ≥3.10 with strict type hints
+- FastAPI async framework with OpenAPI 3.1 documentation
+- PyTorch/PyTorch-Lightning for deep learning models
+- scikit-learn and SciPy for classical ML and statistics
+- Comprehensive error handling and graceful degradation
+- Professional logging and monitoring capabilities
+
+### Authors
+- Nik Jois <nikjois@llamasearch.ai>
+
+## [Unreleased]
+- Kubernetes deployment manifests
+- Additional causal discovery algorithms
+- Enhanced visualization capabilities
 
 ## [Unreleased]
 

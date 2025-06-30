@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/llamasearchai/OpenPerturbation/actions/workflows/python-ci.yml"><img src="https://github.com/llamasearchai/OpenPerturbation/actions/workflows/python-ci.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://llamasearchai.github.io/OpenPerturbation"><img src="https://img.shields.io/badge/docs-live-brightgreen" alt="Documentation"></a>
   <a href="https://img.shields.io/pypi/v/openperturbation"><img src="https://img.shields.io/pypi/v/openperturbation?color=brightgreen" alt="PyPI version"></a>
   <a href="https://codecov.io/gh/llamasearchai/OpenPerturbation"><img src="https://codecov.io/gh/llamasearchai/OpenPerturbation/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://img.shields.io/badge/License-MIT-blue.svg"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
@@ -26,11 +27,12 @@ OpenPerturbation is a production-ready platform for perturbation biology, causal
 2. [Quick Start](#quick-start)
 3. [Project Structure](#project-structure)
 4. [API Overview](#api-overview)
-5. [Benchmarks](#benchmarks)
-6. [Contributing](#contributing)
-7. [License](#license)
-8. [Citation](#citation)
-9. [Contact](#contact)
+5. [Documentation](#documentation)
+6. [Benchmarks](#benchmarks)
+7. [Contributing](#contributing)
+8. [License](#license)
+9. [Citation](#citation)
+10. [Contact](#contact)
 
 ---
 
@@ -75,14 +77,13 @@ openperturbation               # or: python -m src.api.server
 docker compose up --build -d   # API available at http://localhost:8000
 ```
 
-### Python Package *(coming soon)*
+### Python Package
 ```bash
 pip install openperturbation
 openperturbation --help
 ```
 
 The interactive Swagger UI is available at `http://localhost:8000/docs` after startup.
-View the logo at `http://localhost:8000/logo`.
 
 ---
 
@@ -96,11 +97,10 @@ OpenPerturbation/
 │   ├── training/          # PyTorch-Lightning modules
 │   └── utils/             # Helpers
 ├── tests/                 # Test-suite
+├── docs/                  # Documentation source
 ├── docker/                # Container assets
-└── docs/                  # Additional docs
+└── configs/               # Configuration files
 ```
-
-For a full tree run `tree -L 3`.
 
 ---
 
@@ -113,6 +113,17 @@ For a full tree run `tree -L 3`.
 | POST | `/analysis/start` | Launch analysis pipeline |
 | GET | `/analysis/{job_id}/status` | Retrieve job status |
 | … | *20+ more* | See `/docs` for full list |
+
+---
+
+## Documentation
+
+📚 **Complete documentation is available at: [llamasearchai.github.io/OpenPerturbation](https://llamasearchai.github.io/OpenPerturbation)**
+
+- [Quick Start Guide](https://llamasearchai.github.io/OpenPerturbation/quick_start/)
+- [API Reference](https://llamasearchai.github.io/OpenPerturbation/api_reference/)
+- [Deployment Guide](https://llamasearchai.github.io/OpenPerturbation/deployment/)
+- [About & Architecture](https://llamasearchai.github.io/OpenPerturbation/about/)
 
 ---
 
