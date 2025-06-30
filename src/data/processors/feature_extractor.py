@@ -1,35 +1,74 @@
 """
-Feature extraction utilities for perturbation data
+Feature Extraction Module for OpenPerturbation Platform
+
+Comprehensive feature extraction for perturbation analysis supporting multiple data modalities.
 
 Author: Nik Jois
 Email: nikjois@llamasearch.ai
 """
 
 import logging
+import warnings
+from pathlib import Path
+from typing import Dict, List, Optional, Union, Any, Tuple
+
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Union, Tuple
-from pathlib import Path
-import warnings
 
-# Core scientific computing
+# Runtime availability flags
+HAS_SCIPY = False
+HAS_SKIMAGE = False
+HAS_SKLEARN = False
+HAS_SCANPY = False
+
+# Statistical analysis
 try:
-    import scipy.stats as stats
-    from scipy import sparse
+    from scipy import stats
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
     warnings.warn("SciPy not available. Some features may be limited.")
 
-# Image processing
+# Image processing - Handle all skimage imports with proper fallbacks
 try:
-    import skimage
-    from skimage import feature, measure, filters, morphology
-    from skimage.feature import greycomatrix, greycoprops
+    # Import skimage modules individually to handle import resolution
+    from skimage import feature as skimage_feature
+    from skimage import measure as skimage_measure  
+    from skimage import filters as skimage_filters
+    from skimage import morphology as skimage_morphology
+    from skimage import io as skimage_io
+    
+    # Import specific functions
+    from skimage.feature import greycomatrix, greycoprops, blob_log
+    from skimage.filters import threshold_otsu
+    from skimage.measure import label, regionprops
+    
     HAS_SKIMAGE = True
 except ImportError:
     HAS_SKIMAGE = False
     warnings.warn("scikit-image not available. Image processing features disabled.")
+    
+    # Create fallback stubs for skimage functions
+    def greycomatrix(*args: Any, **kwargs: Any) -> np.ndarray:
+        return np.zeros((1, 1, 1, 1))
+    
+    def greycoprops(*args: Any, **kwargs: Any) -> np.ndarray:
+        return np.zeros((1, 1))
+    
+    def blob_log(*args: Any, **kwargs: Any) -> np.ndarray:
+        return np.array([])
+    
+    def threshold_otsu(*args: Any, **kwargs: Any) -> float:
+        return 0.5
+    
+    def label(*args: Any, **kwargs: Any) -> np.ndarray:
+        return np.zeros((1, 1), dtype=int)
+    
+    def regionprops(*args: Any, **kwargs: Any) -> List[Any]:
+        return []
+    
+    # Set skimage_io to None for type checking
+    skimage_io = None
 
 # Machine learning
 try:
@@ -53,7 +92,7 @@ except ImportError:
 class OrganelleDetector:
     """Fallback organelle detector when specialized libraries are not available."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
         self.logger.warning("Using fallback OrganelleDetector. Install specialized libraries for full functionality.")
     
@@ -62,20 +101,22 @@ class OrganelleDetector:
         if not HAS_SKIMAGE:
             return {"error": "scikit-image required for organelle detection"}
         
-        # Basic blob detection as fallback
-        from skimage.feature import blob_log
-        blobs = blob_log(image, max_sigma=30, num_sigma=10, threshold=.1)
-        
-        return {
-            "organelles": len(blobs),
-            "positions": blobs.tolist() if len(blobs) > 0 else [],
-            "method": "basic_blob_detection"
-        }
+        try:
+            # Basic blob detection as fallback
+            blobs = blob_log(image, max_sigma=30, num_sigma=10, threshold=.1)
+            
+            return {
+                "organelles": len(blobs),
+                "positions": blobs.tolist() if len(blobs) > 0 else [],
+                "method": "basic_blob_detection"
+            }
+        except Exception as e:
+            return {"error": f"Organelle detection failed: {e}"}
 
 class CellSegmenter:
     """Fallback cell segmenter when specialized libraries are not available."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
         self.logger.warning("Using fallback CellSegmenter. Install specialized libraries for full functionality.")
     
@@ -84,21 +125,21 @@ class CellSegmenter:
         if not HAS_SKIMAGE:
             return {"error": "scikit-image required for cell segmentation"}
         
-        # Basic thresholding and labeling
-        from skimage.filters import threshold_otsu
-        from skimage.measure import label, regionprops
-        
-        thresh = threshold_otsu(image)
-        binary = image > thresh
-        labeled = label(binary)
-        props = regionprops(labeled)
-        
-        return {
-            "cell_count": len(props),
-            "areas": [prop.area for prop in props],
-            "centroids": [prop.centroid for prop in props],
-            "method": "basic_thresholding"
-        }
+        try:
+            # Basic thresholding and labeling
+            thresh = threshold_otsu(image)
+            binary = image > thresh
+            labeled = label(binary)
+            props = regionprops(labeled)
+            
+            return {
+                "cell_count": len(props),
+                "areas": [prop.area for prop in props] if props else [],
+                "centroids": [list(prop.centroid) for prop in props] if props else [],
+                "method": "basic_thresholding"
+            }
+        except Exception as e:
+            return {"error": f"Cell segmentation failed: {e}"}
 
 class FeatureExtractor:
     """
@@ -110,14 +151,14 @@ class FeatureExtractor:
     - Multimodal fusion
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         self.config = config or {}
         self.logger = logging.getLogger(__name__)
         
         # Initialize processors based on available libraries
         if HAS_SKIMAGE:
-            self.organelle_detector = OrganelleDetector()
-            self.cell_segmenter = CellSegmenter()
+            self.organelle_detector: Optional[OrganelleDetector] = OrganelleDetector()
+            self.cell_segmenter: Optional[CellSegmenter] = CellSegmenter()
         else:
             self.organelle_detector = None
             self.cell_segmenter = None
@@ -154,11 +195,15 @@ class FeatureExtractor:
             
             # Add advanced features if libraries are available
             if HAS_SKLEARN:
-                features["pca_features"] = self._compute_pca_features(expression_matrix)
-                features["highly_variable_genes"] = self._find_highly_variable_genes(expression_matrix, genes)
+                pca_result = self._compute_pca_features(expression_matrix)
+                features["pca_features"] = pca_result
+                
+                hvg_result = self._find_highly_variable_genes(expression_matrix, genes)
+                features["highly_variable_genes"] = hvg_result
             
             if HAS_SCANPY:
-                features["scanpy_metrics"] = self._compute_scanpy_metrics(expression_matrix, genes)
+                scanpy_result = self._compute_scanpy_metrics(expression_matrix, genes)
+                features["scanpy_metrics"] = scanpy_result
             
             return features
             
@@ -193,17 +238,22 @@ class FeatureExtractor:
                 }
             }
             
-            # Texture features
-            if len(image.shape) == 2:  # Grayscale image
-                features["texture_features"] = self._compute_texture_features(image)
+            # Add texture features
+            texture_features = self._compute_texture_features(image)
+            if "error" not in texture_features:
+                features["texture"] = texture_features
             
-            # Cell segmentation
+            # Add cell segmentation features
             if self.cell_segmenter:
-                features["cell_features"] = self.cell_segmenter.segment_cells(image)
+                cell_features = self.cell_segmenter.segment_cells(image)
+                if "error" not in cell_features:
+                    features["cell_segmentation"] = cell_features
             
-            # Organelle detection
+            # Add organelle detection if requested
             if extract_organelles and self.organelle_detector:
-                features["organelle_features"] = self.organelle_detector.detect_organelles(image)
+                organelle_features = self.organelle_detector.detect_organelles(image)
+                if "error" not in organelle_features:
+                    features["organelles"] = organelle_features
             
             return features
             
@@ -214,9 +264,9 @@ class FeatureExtractor:
     def extract_multimodal_features(self,
                                   transcriptomic_data: Optional[Union[pd.DataFrame, np.ndarray]] = None,
                                   image_data: Optional[np.ndarray] = None,
-                                  **kwargs) -> Dict[str, Any]:
+                                  **kwargs: Any) -> Dict[str, Any]:
         """
-        Extract features from multiple data modalities.
+        Extract features from multiple modalities.
         
         Args:
             transcriptomic_data: Gene expression data
@@ -226,26 +276,29 @@ class FeatureExtractor:
         Returns:
             Dictionary containing multimodal features
         """
-        features = {"modalities": []}
-        
         try:
+            features: Dict[str, Any] = {}
+            
+            # Extract transcriptomic features
             if transcriptomic_data is not None:
-                features["transcriptomic"] = self.extract_transcriptomic_features(
-                    transcriptomic_data, kwargs.get("gene_names")
-                )
-                features["modalities"].append("transcriptomic")
+                trans_features = self.extract_transcriptomic_features(transcriptomic_data)
+                features["transcriptomic"] = trans_features
             
+            # Extract morphological features
             if image_data is not None:
-                features["morphological"] = self.extract_morphological_features(
-                    image_data, kwargs.get("extract_organelles", True)
-                )
-                features["modalities"].append("morphological")
+                morph_features = self.extract_morphological_features(image_data)
+                features["morphological"] = morph_features
             
-            # Cross-modal features if both modalities are present
-            if len(features["modalities"]) > 1:
-                features["cross_modal"] = self._compute_cross_modal_features(
-                    transcriptomic_data, image_data
-                )
+            # Extract cross-modal features if both modalities are available
+            if transcriptomic_data is not None and image_data is not None:
+                # Convert transcriptomic data to numpy array if needed
+                if isinstance(transcriptomic_data, pd.DataFrame):
+                    trans_array = transcriptomic_data.values
+                else:
+                    trans_array = np.array(transcriptomic_data)
+                
+                cross_modal_features = self._compute_cross_modal_features(trans_array, image_data)
+                features["cross_modal"] = cross_modal_features
             
             return features
             
@@ -259,8 +312,8 @@ class FeatureExtractor:
             "mean": float(np.mean(data)),
             "std": float(np.std(data)),
             "median": float(np.median(data)),
-            "q25": float(np.percentile(data, 25)),
-            "q75": float(np.percentile(data, 75)),
+            "min": float(np.min(data)),
+            "max": float(np.max(data)),
             "skewness": float(stats.skew(data.flatten())) if HAS_SCIPY else 0.0,
             "kurtosis": float(stats.kurtosis(data.flatten())) if HAS_SCIPY else 0.0
         }
@@ -300,12 +353,12 @@ class FeatureExtractor:
             selector.fit(data, y_dummy)
             
             selected_indices = selector.get_support(indices=True)
-            selected_genes = [gene_names[i] for i in selected_indices]
+            selected_genes = [gene_names[i] for i in (selected_indices or []) if i < len(gene_names)]
             
             return {
                 "highly_variable_genes": selected_genes,
                 "n_selected": len(selected_genes),
-                "selection_scores": selector.scores_[selected_indices].tolist()
+                "selection_scores": selector.scores_[selected_indices].tolist() if selector.scores_ is not None else []
             }
         except Exception as e:
             return {"error": f"Gene selection failed: {e}"}
@@ -319,21 +372,28 @@ class FeatureExtractor:
             # Create AnnData object
             import anndata as ad
             adata = ad.AnnData(X=data)
-            adata.var_names = gene_names[:data.shape[1]]
+            
+            # Ensure gene_names length matches data dimensions
+            n_genes = min(len(gene_names), data.shape[1])
+            if n_genes > 0:
+                adata.var_names = gene_names[:n_genes]
             
             # Basic QC metrics
             sc.pp.calculate_qc_metrics(adata, inplace=True)
             
             return {
-                "n_genes_by_counts": adata.obs['n_genes_by_counts'].mean(),
-                "total_counts": adata.obs['total_counts'].mean(),
-                "pct_counts_in_top_50_genes": adata.obs['pct_counts_in_top_50_genes'].mean()
+                "n_genes_by_counts": float(adata.obs['n_genes_by_counts'].mean()),
+                "total_counts": float(adata.obs['total_counts'].mean()),
+                "pct_counts_in_top_50_genes": float(adata.obs['pct_counts_in_top_50_genes'].mean())
             }
         except Exception as e:
             return {"error": f"Scanpy metrics computation failed: {e}"}
     
     def _compute_texture_features(self, image: np.ndarray) -> Dict[str, Any]:
         """Compute texture features from grayscale image."""
+        if not HAS_SKIMAGE:
+            return {"error": "scikit-image required for texture features"}
+        
         try:
             # Convert to uint8 if needed
             if image.dtype != np.uint8:
@@ -359,7 +419,7 @@ class FeatureExtractor:
                                     image_data: Optional[np.ndarray]) -> Dict[str, Any]:
         """Compute cross-modal features."""
         try:
-            features = {"computed": True}
+            features: Dict[str, Any] = {"computed": True}
             
             if transcriptomic_data is not None and image_data is not None:
                 # Simple correlation between modalities
@@ -368,9 +428,22 @@ class FeatureExtractor:
                     trans_flat = transcriptomic_data.flatten()[:1000]  # Sample for efficiency
                     image_flat = image_data.flatten()[:1000]
                     
-                    if len(trans_flat) == len(image_flat):
-                        correlation = stats.pearsonr(trans_flat, image_flat)[0]
-                        features["cross_modal_correlation"] = float(correlation)
+                    min_length = min(len(trans_flat), len(image_flat))
+                    if min_length > 0:
+                        trans_sample = trans_flat[:min_length]
+                        image_sample = image_flat[:min_length]
+                        
+                        # Fix the tuple type conversion issue
+                        correlation_result = stats.pearsonr(trans_sample, image_sample)
+                        # Extract correlation coefficient safely
+                        if hasattr(correlation_result, 'correlation'):
+                            # New scipy version returns object with .correlation attribute
+                            correlation_value = float(correlation_result.correlation)
+                        else:
+                            # Older scipy version returns tuple
+                            correlation_value = float(correlation_result[0])
+                        
+                        features["cross_modal_correlation"] = correlation_value
             
             return features
             
@@ -410,9 +483,8 @@ def extract_features_from_file(file_path: Union[str, Path],
                 return {"error": f"Unsupported transcriptomic file format: {file_path.suffix}"}
         
         elif feature_type == "morphological":
-            if HAS_SKIMAGE:
-                from skimage import io
-                image = io.imread(file_path)
+            if HAS_SKIMAGE and skimage_io is not None:
+                image = skimage_io.imread(file_path)
                 return extractor.extract_morphological_features(image)
             else:
                 return {"error": "scikit-image required for morphological feature extraction"}
