@@ -207,7 +207,7 @@ def safe_router_decorator(method: str, path: str, **kwargs):
 _JOBS: Dict[str, Dict[str, Any]] = {}
 
 @safe_router_decorator("get", "/models", response_model=List[Dict[str, Any]])
-def list_models():
+def list_models() -> List[Dict[str, Any]]:
     """List all available models"""
     if not MODEL_REGISTRY:
         return []
@@ -217,7 +217,7 @@ def list_models():
     ]
 
 @safe_router_decorator("post", "/causal-discovery", response_model=Dict[str, Any])
-async def run_causal_discovery(request: CausalDiscoveryRequest):
+async def run_causal_discovery(request: CausalDiscoveryRequest) -> Dict[str, Any]:
     """Run causal discovery analysis on provided data."""
     try:
         if not CAUSAL_AVAILABLE:
@@ -285,7 +285,17 @@ async def run_causal_discovery(request: CausalDiscoveryRequest):
             serializable_results = convert_to_serializable(results)
             # Test JSON serialization
             json.dumps(serializable_results)
-            return serializable_results
+            # Ensure we return a dictionary
+            if isinstance(serializable_results, dict):
+                return serializable_results
+            else:
+                # Fallback if conversion didn't return a dict
+                return {
+                    "results": serializable_results,
+                    "method": method,
+                    "variable_names": config["variable_names"],
+                    "message": "Causal discovery completed"
+                }
         except (TypeError, ValueError) as e:
             # Fallback to basic result structure
             return {
@@ -306,7 +316,7 @@ async def run_causal_discovery(request: CausalDiscoveryRequest):
         raise safe_http_exception(status_code=500, detail=str(e))
 
 @safe_router_decorator("post", "/explainability", response_model=Dict[str, Any])
-async def run_explainability_analysis(request: ExplainabilityRequest):
+async def run_explainability_analysis(request: ExplainabilityRequest) -> Dict[str, Any]:
     """Run explainability analysis on a trained model."""
     try:
         results = {}
@@ -366,7 +376,7 @@ async def run_explainability_analysis(request: ExplainabilityRequest):
         raise safe_http_exception(status_code=500, detail=str(e))
 
 @safe_router_decorator("post", "/intervention-design", response_model=Dict[str, Any])
-async def design_interventions(request: InterventionDesignRequest):
+async def design_interventions(request: InterventionDesignRequest) -> Dict[str, Any]:
     """Design optimal interventions based on causal graph."""
     try:
         # Mock intervention design results
@@ -387,7 +397,7 @@ async def design_interventions(request: InterventionDesignRequest):
         raise safe_http_exception(status_code=500, detail=str(e))
 
 @safe_router_decorator("get", "/experiments", response_model=List[Dict[str, Any]])
-async def list_experiments():
+async def list_experiments() -> List[Dict[str, Any]]:
     """List all experiments"""
     # Mock experiments list
     return [
@@ -588,7 +598,7 @@ async def delete_file(filename: str):
         raise safe_http_exception(status_code=500, detail=str(e))
 
 @safe_router_decorator("get", "/health", response_model=Dict[str, Any])
-async def health_check():
+async def health_check() -> Dict[str, Any]:
     """Health check endpoint"""
     return {
         "status": "healthy",

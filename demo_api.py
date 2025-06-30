@@ -8,6 +8,7 @@ Email: nikjois@llamasearch.ai
 import sys
 import asyncio
 from pathlib import Path
+from typing import Dict, Any, Union
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -48,7 +49,11 @@ async def demo_api_endpoints():
             variable_names=["gene_A", "gene_B", "gene_C"]
         )
         causal_result = await run_causal_discovery(causal_request)
-        print(f"   Causal discovery completed: {causal_result.get('message', 'No message')}")
+        if isinstance(causal_result, dict):
+            message = causal_result.get('message', 'No message')
+        else:
+            message = 'No message available'
+        print(f"   Causal discovery completed: {message}")
         print()
         
         print("4. Testing intervention design...")
@@ -58,7 +63,12 @@ async def demo_api_endpoints():
             budget=1000.0
         )
         intervention_result = await design_interventions(intervention_request)
-        print(f"   Interventions designed: {len(intervention_result.get('recommended_interventions', []))}")
+        if isinstance(intervention_result, dict):
+            interventions = intervention_result.get('recommended_interventions', [])
+            intervention_count = len(interventions) if isinstance(interventions, list) else 0
+        else:
+            intervention_count = 0
+        print(f"   Interventions designed: {intervention_count}")
         print()
         
         print("5. Testing experiments listing...")
