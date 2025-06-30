@@ -48,10 +48,11 @@ except ImportError:
     cv2 = DummyCV2()
 
 try:
-    from skimage import io, transform, filters, exposure, measure, segmentation
+    from skimage import io, transform, filters, exposure, measure, segmentation  # type: ignore
     SKIMAGE_AVAILABLE = True
-except ImportError:
-    warnings.warn("scikit-image not available, using fallback implementations")
+except Exception:  # pragma: no cover
+    # Catch broad exceptions (e.g., SciPy capability errors) and fall back to dummy implementation
+    warnings.warn("scikit-image not available or failed to import – using fallback implementations")
     SKIMAGE_AVAILABLE = False
     
     # Create minimal skimage functionality  
