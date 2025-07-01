@@ -15,8 +15,12 @@ from pathlib import Path
 import networkx as nx
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-from sklearn.metrics import accuracy_score, mean_squared_error
-import random
+# Lazy import scikit-learn metrics to avoid SciPy dependency in constrained environments
+try:
+    from sklearn.metrics import accuracy_score as _sk_accuracy, mean_squared_error as _sk_mse
+    SKLEARN_METRICS_AVAILABLE = True
+except Exception:
+    SKLEARN_METRICS_AVAILABLE = False
 from numpy.typing import NDArray
 
 # Setup logging
@@ -1565,3 +1569,24 @@ def shuffle_array_inplace(arr: Union[NDArray, List]) -> None:
         # Use standard random for lists
         import random
         random.shuffle(arr)
+
+# --------------------
+# Fallback metric utilities (appended by OpenPerturbation CI)
+# --------------------
+
+# Ensure fallback definitions exist in environments without scikit-learn.
+try:
+    _sk_accuracy  # type: ignore
+except NameError:  # pragma: no cover
+    def _sk_accuracy(y_true, y_pred, **kwargs):  # type: ignore
+        """Simple accuracy when scikit-learn is unavailable."""
+        return float((np.asarray(y_true) == np.asarray(y_pred)).mean())
+
+    def _sk_mse(y_true, y_pred, **kwargs):  # type: ignore
+        """Simple MSE when scikit-learn is unavailable."""
+        diff = np.asarray(y_true) - np.asarray(y_pred)
+        return float(np.mean(diff ** 2))
+
+# Public aliases used throughout the codebase
+accuracy_score = _sk_accuracy  # type: ignore
+mean_squared_error = _sk_mse  # type: ignore
