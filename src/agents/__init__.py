@@ -8,7 +8,7 @@ Email: nikjois@llamasearch.ai
 """
 
 from .openai_agent import OpenPerturbationAgent, AnalysisAgent, ExperimentDesignAgent
-from .agent_tools import PerturbationAnalysisTools
+from .agent_tools import PerturbationAnalysisTools, AgentTools
 from .conversation_handler import ConversationHandler
 
 __all__ = [
@@ -16,5 +16,6 @@ __all__ = [
     "AnalysisAgent",
     "ExperimentDesignAgent",
     "PerturbationAnalysisTools",
+    "AgentTools",
     "ConversationHandler",
 ]

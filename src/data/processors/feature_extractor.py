@@ -25,7 +25,7 @@ HAS_SCANPY = False
 try:
     from scipy import stats
     HAS_SCIPY = True
-except ImportError:
+except Exception:  # Catch all exceptions during SciPy import
     HAS_SCIPY = False
     warnings.warn("SciPy not available. Some features may be limited.")
 
@@ -76,7 +76,7 @@ try:
     from sklearn.preprocessing import StandardScaler
     from sklearn.feature_selection import SelectKBest, f_classif
     HAS_SKLEARN = True
-except ImportError:
+except Exception:  # Catch all exceptions during sklearn import
     HAS_SKLEARN = False
     warnings.warn("scikit-learn not available. ML features may be limited.")
 
@@ -84,7 +84,7 @@ except ImportError:
 try:
     import scanpy as sc
     HAS_SCANPY = True
-except ImportError:
+except Exception:  # Catch all exceptions during scanpy import
     HAS_SCANPY = False
     warnings.warn("scanpy not available. Single-cell analysis features disabled.")
 

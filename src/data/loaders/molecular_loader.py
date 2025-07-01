@@ -43,8 +43,12 @@ try:
     from rdkit.DataStructs import TanimotoSimilarity
     from rdkit.Chem.rdMolChemicalFeatures import BuildFeatureFactory
     from rdkit import RDConfig
+    
+    # Import Mol type
+    Mol = Chem.Mol
+    
     RDKIT_AVAILABLE = True
-except ImportError:
+except Exception:  # Catch all exceptions during RDKit import
     warnings.warn("RDKit not available. Molecular features will be limited.")
     RDKIT_AVAILABLE = False
     

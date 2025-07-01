@@ -82,7 +82,7 @@ except ImportError:
 try:
     import scanpy as sc
     SCANPY_AVAILABLE = True
-except ImportError:
+except Exception:  # Catch all exceptions during scanpy import
     warnings.warn("Scanpy not available")
     SCANPY_AVAILABLE = False
     

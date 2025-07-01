@@ -36,7 +36,7 @@ def test_imports():
         return False
     
     try:
-        from src.api.endpoints import router
+        from src.api.endpoints import health_check, list_models
         print("[SUCCESS] Endpoints imports working")
     except Exception as e:
         print(f"[ERROR] Endpoints imports failed: {e}")
@@ -186,7 +186,7 @@ def test_api_models():
         print(f"[ERROR] API models test failed: {e}")
         return False
 
-async def test_async_functionality():
+def test_async_functionality():
     """Test async functionality."""
     print("\nTesting async functionality...")
     
@@ -196,7 +196,7 @@ async def test_async_functionality():
             await asyncio.sleep(0.01)
             return {"status": "completed"}
         
-        result = await dummy_analysis()
+        result = asyncio.run(dummy_analysis())
         print(f"[SUCCESS] Async functionality working: {result}")
         return True
     except Exception as e:
@@ -352,7 +352,7 @@ def main():
     test_results['server_creation'] = test_server_creation()
     test_results['port_finding'] = test_port_finding()
     test_results['api_models'] = test_api_models()
-    test_results['async_functionality'] = asyncio.run(test_async_functionality())
+    test_results['async_functionality'] = test_async_functionality()
     test_results['config_validation'] = test_config_validation()
     test_results['file_operations'] = test_file_operations()
     test_results['requirements_generation'] = generate_requirements()

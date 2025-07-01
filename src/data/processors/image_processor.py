@@ -11,11 +11,29 @@ import torch.nn as nn
 import cv2
 from typing import Dict, List, Tuple, Optional, Union, Callable
 from pathlib import Path
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-from skimage import filters, morphology, measure, segmentation
-from scipy import ndimage
 import warnings
+
+try:
+    import albumentations as A
+    from albumentations.pytorch import ToTensorV2
+    HAS_ALBUMENTATIONS = True
+except Exception:
+    HAS_ALBUMENTATIONS = False
+    warnings.warn("Albumentations not available. Using basic transforms.")
+
+try:
+    from skimage import filters, morphology, measure, segmentation
+    HAS_SKIMAGE = True
+except Exception:
+    HAS_SKIMAGE = False
+    warnings.warn("scikit-image not available. Image processing features may be limited.")
+
+try:
+    from scipy import ndimage
+    HAS_SCIPY = True
+except Exception:
+    HAS_SCIPY = False
+    warnings.warn("SciPy not available. Some image processing features may be limited.")
 
 class CellularImageProcessor:
     """

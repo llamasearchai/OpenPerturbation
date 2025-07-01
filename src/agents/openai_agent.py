@@ -123,6 +123,11 @@ class OpenPerturbationAgent:
         
         logger.info(f"Initialized OpenPerturbation Agent with model {model}")
 
+    @property
+    def conversation_history(self) -> List[Dict[str, Any]]:
+        """Get conversation history for backward compatibility."""
+        return self.conversation_handler.get_conversation_history(self.conversation_id)
+
     async def analyze_perturbation_data(
         self,
         data: Dict[str, Any],

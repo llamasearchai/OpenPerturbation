@@ -395,7 +395,7 @@ class HighContentImagingDataset(Dataset):
 
         if image_path.exists():
             return self._load_multipage_image(image_path)
-        elif len(list(self.data_dir.glob(f"{filename.stem}_*.tif"))) > 0:
+        elif len(list(self.data_dir.glob(f"{Path(filename).stem}_*.tif"))) > 0:
             return self._load_multichannel_image(sample_info)
         else:
             # Return dummy image

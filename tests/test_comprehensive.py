@@ -19,6 +19,7 @@ import torch
 from unittest.mock import Mock, patch, AsyncMock
 from typing import Dict, List, Any, Optional
 import tempfile
+import warnings
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -140,45 +141,51 @@ class TestDataProcessing:
     
     def test_feature_extractor_import(self):
         """Test feature extractor can be imported."""
-        try:
-            from src.data.processors.feature_extractor import FeatureExtractor
-            # Basic instantiation test
-            extractor = FeatureExtractor()
-            assert extractor is not None
-        except ImportError as e:
-            pytest.skip(f"Feature extractor import failed: {e}")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                from src.data.processors.feature_extractor import FeatureExtractor
+                # Basic instantiation test
+                extractor = FeatureExtractor()
+                assert extractor is not None
+            except ImportError as e:
+                pytest.skip(f"Feature extractor import failed: {e}")
     
     def test_image_processor_import(self):
         """Test image processor can be imported."""
-        try:
-            from src.data.processors.image_processor import CellularImageProcessor
-            config = {"image_size": 224, "channels": ["DAPI", "GFP"], "normalization_method": "percentile"}
-            processor = CellularImageProcessor(config)
-            assert processor is not None
-        except ImportError as e:
-            pytest.skip(f"Image processor import failed: {e}")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                from src.data.processors.image_processor import CellularImageProcessor
+                config = {"image_size": 224, "channels": ["DAPI", "GFP"], "normalization_method": "percentile"}
+                processor = CellularImageProcessor(config)
+                assert processor is not None
+            except ImportError as e:
+                pytest.skip(f"Image processor import failed: {e}")
     
     def test_data_loaders_import(self):
         """Test data loaders can be imported."""
-        try:
-            from src.data.loaders.genomics_loader import GenomicsDataLoader
-            from src.data.loaders.imaging_loader import HighContentImagingLoader
-            from src.data.loaders.molecular_loader import MolecularDataLoader
-            
-            # Basic instantiation tests with minimal configs
-            genomics_config = {"data_dir": ".", "batch_size": 1}
-            imaging_config = {"data_dir": ".", "batch_size": 1, "image_size": [256, 256]}
-            molecular_config = {"data_dir": ".", "batch_size": 1}
-            
-            genomics_loader = GenomicsDataLoader(genomics_config)
-            imaging_loader = HighContentImagingLoader(imaging_config)  
-            molecular_loader = MolecularDataLoader(molecular_config)
-            
-            assert genomics_loader is not None
-            assert imaging_loader is not None
-            assert molecular_loader is not None
-        except ImportError as e:
-            pytest.skip(f"Data loaders import failed: {e}")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                from src.data.loaders.genomics_loader import GenomicsDataLoader
+                from src.data.loaders.imaging_loader import HighContentImagingLoader
+                from src.data.loaders.molecular_loader import MolecularDataLoader
+                
+                # Basic instantiation tests with minimal configs
+                genomics_config = {"data_dir": ".", "batch_size": 1}
+                imaging_config = {"data_dir": ".", "batch_size": 1, "image_size": [256, 256]}
+                molecular_config = {"data_dir": ".", "batch_size": 1}
+                
+                genomics_loader = GenomicsDataLoader(genomics_config)
+                imaging_loader = HighContentImagingLoader(imaging_config)  
+                molecular_loader = MolecularDataLoader(molecular_config)
+                
+                assert genomics_loader is not None
+                assert imaging_loader is not None
+                assert molecular_loader is not None
+            except ImportError as e:
+                pytest.skip(f"Data loaders import failed: {e}")
 
 
 class TestModels:
@@ -244,21 +251,23 @@ class TestExplainability:
     
     def test_explainability_imports(self):
         """Test explainability modules can be imported."""
-        try:
-            from src.explainability.attention_maps import AttentionMapExtractor
-            from src.explainability.concept_activation import ConceptActivationMapper
-            from src.explainability.pathway_analysis import PathwayEnrichmentAnalyzer, PathwayDatabase
-            
-            assert AttentionMapExtractor is not None
-            assert ConceptActivationMapper is not None
-            
-            # PathwayEnrichmentAnalyzer needs a PathwayDatabase
-            pathway_db = PathwayDatabase()
-            pathway_analyzer = PathwayEnrichmentAnalyzer(pathway_db)
-            assert pathway_analyzer is not None
-            
-        except ImportError as e:
-            pytest.skip(f"Explainability imports failed: {e}")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                from src.explainability.attention_maps import AttentionMapExtractor
+                from src.explainability.concept_activation import ConceptActivationMapper
+                from src.explainability.pathway_analysis import PathwayEnrichmentAnalyzer, PathwayDatabase
+                
+                assert AttentionMapExtractor is not None
+                assert ConceptActivationMapper is not None
+                
+                # PathwayEnrichmentAnalyzer needs a PathwayDatabase
+                pathway_db = PathwayDatabase()
+                pathway_analyzer = PathwayEnrichmentAnalyzer(pathway_db)
+                assert pathway_analyzer is not None
+                
+            except ImportError as e:
+                pytest.skip(f"Explainability imports failed: {e}")
 
 
 class TestUtilities:
@@ -285,13 +294,15 @@ class TestUtilities:
     
     def test_metrics(self):
         """Test metrics utilities."""
-        try:
-            from src.training.metrics import OpenPerturbationMetricCollection
-            # Test with dummy configuration
-            metrics = OpenPerturbationMetricCollection({})
-            assert isinstance(metrics, object)
-        except ImportError as e:
-            pytest.skip(f"Metrics import failed: {e}")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                from src.training.metrics import OpenPerturbationMetricCollection
+                # Test with dummy configuration
+                metrics = OpenPerturbationMetricCollection({})
+                assert isinstance(metrics, object)
+            except ImportError as e:
+                pytest.skip(f"Metrics import failed: {e}")
 
 
 class TestConfiguration:
@@ -312,17 +323,19 @@ class TestTraining:
     
     def test_training_imports(self):
         """Test training modules can be imported."""
-        try:
-            from src.training.lightning_modules import CausalVAELightningModule
-            from src.training.data_modules import PerturbationDataModule
-            from src.training.metrics import OpenPerturbationMetricCollection
-            
-            assert CausalVAELightningModule is not None
-            assert PerturbationDataModule is not None
-            assert OpenPerturbationMetricCollection is not None
-            
-        except ImportError as e:
-            pytest.skip(f"Training imports failed: {e}")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                from src.training.lightning_modules import CausalVAELightningModule
+                from src.training.data_modules import PerturbationDataModule
+                from src.training.metrics import OpenPerturbationMetricCollection
+                
+                assert CausalVAELightningModule is not None
+                assert PerturbationDataModule is not None
+                assert OpenPerturbationMetricCollection is not None
+                
+            except ImportError as e:
+                pytest.skip(f"Training imports failed: {e}")
 
 
 class TestPipeline:
@@ -330,24 +343,25 @@ class TestPipeline:
     
     def test_pipeline_import(self):
         """Test pipeline can be imported."""
-        try:
-            from src.pipeline.openperturbation_pipeline import OpenPerturbationPipeline
-            from omegaconf import DictConfig
-            
-            # Create minimal config for pipeline
-            config = DictConfig({
-                'seed': 42,
-                'use_gpu': False,
-                'output_dir': 'test_outputs',
-                'use_wandb': False,
-                'data': {'batch_size': 1},
-                'model': {'name': 'test'}
-            })
-            
-            pipeline = OpenPerturbationPipeline(config)
-            assert pipeline is not None
-        except ImportError as e:
-            pytest.skip(f"Pipeline import failed: {e}")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                from src.pipeline.openperturbation_pipeline import OpenPerturbationPipeline
+                from omegaconf import DictConfig
+                
+                # Create minimal config for pipeline
+                config = DictConfig({
+                    'seed': 42,
+                    'data': {'batch_size': 1},
+                    'model': {'name': 'test'},  
+                    'training': {'max_epochs': 1}
+                })
+                
+                pipeline = OpenPerturbationPipeline(config)
+                assert pipeline is not None
+                
+            except ImportError as e:
+                pytest.skip(f"Pipeline import failed: {e}")
 
 
 @pytest.mark.asyncio

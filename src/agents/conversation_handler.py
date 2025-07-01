@@ -19,11 +19,17 @@ logger = logging.getLogger(__name__)
 class ConversationHandler:
     """Handle conversations with OpenPerturbation agents."""
 
-    def __init__(self, conversation_dir: str = "conversations"):
+    def __init__(self, conversation_dir: str = "conversations", max_history: Optional[int] = None):
         """Initialize conversation handler."""
         self.conversation_dir = Path(conversation_dir)
         self.conversation_dir.mkdir(exist_ok=True)
         self.active_conversations: Dict[str, Dict[str, Any]] = {}
+        
+        # Backward compatibility for test interface
+        self.max_history = max_history
+        self.conversation_history: List[Dict[str, Any]] = []
+        self.context: Dict[str, Any] = {}
+        self._default_conversation_id: Optional[str] = None
 
     def start_conversation(self, user_id: str, agent_type: str = "general") -> str:
         """Start a new conversation."""
@@ -44,17 +50,51 @@ class ConversationHandler:
         self.active_conversations[conversation_id] = conversation
         self._save_conversation(conversation_id)
 
+        # Set as default for backward compatibility
+        if self._default_conversation_id is None:
+            self._default_conversation_id = conversation_id
+
         logger.info(f"Started conversation {conversation_id} for user {user_id}")
         return conversation_id
 
     def add_message(
         self,
-        conversation_id: str,
-        role: str,
-        content: str,
+        role_or_conversation_id: str,
+        content_or_role: str,
+        content: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Add a message to the conversation."""
+        """Add a message to the conversation. Supports both old and new interfaces."""
+        
+        # Handle backward compatibility - if only 2 args, assume old interface
+        if content is None:
+            # Old interface: add_message(role, content)
+            role = role_or_conversation_id
+            message_content = content_or_role
+            conversation_id = self._default_conversation_id
+            
+            # If no default conversation, create one
+            if conversation_id is None:
+                conversation_id = self.start_conversation("default_user", "general")
+            
+            # Add to backward compatibility list
+            message = {
+                "role": role,
+                "content": message_content,
+                "timestamp": datetime.now().isoformat(),
+                "metadata": metadata or {},
+            }
+            
+            self.conversation_history.append(message)
+            
+            # Apply max_history limit if set
+            if self.max_history and len(self.conversation_history) > self.max_history:
+                self.conversation_history = self.conversation_history[-self.max_history:]
+        else:
+            # New interface: add_message(conversation_id, role, content)
+            conversation_id = role_or_conversation_id
+            role = content_or_role
+            message_content = content
 
         if conversation_id not in self.active_conversations:
             logger.error(f"Conversation {conversation_id} not found")
@@ -62,7 +102,7 @@ class ConversationHandler:
 
         message = {
             "role": role,
-            "content": content,
+            "content": message_content,
             "timestamp": datetime.now().isoformat(),
             "metadata": metadata or {},
         }
@@ -72,8 +112,22 @@ class ConversationHandler:
 
         return True
 
-    def get_conversation_history(self, conversation_id: str) -> List[Dict[str, Any]]:
+    def set_context(self, context_updates: Dict[str, Any]) -> bool:
+        """Set conversation context (backward compatibility method)."""
+        self.context.update(context_updates)
+        
+        # Also update default conversation if exists
+        if self._default_conversation_id:
+            return self.update_context(self._default_conversation_id, context_updates)
+        
+        return True
+
+    def get_conversation_history(self, conversation_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get conversation history."""
+        
+        # Backward compatibility - if no conversation_id, return simple history
+        if conversation_id is None:
+            return self.conversation_history
 
         if conversation_id not in self.active_conversations:
             # Try to load from disk
@@ -81,6 +135,37 @@ class ConversationHandler:
                 return []
 
         return self.active_conversations[conversation_id]["messages"]
+
+    def get_conversation_summary(self, conversation_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get a summary of the conversation."""
+        
+        # Backward compatibility
+        if conversation_id is None:
+            return {
+                "messages": self.conversation_history,
+                "context": self.context,
+                "message_count": len(self.conversation_history)
+            }
+
+        if conversation_id not in self.active_conversations:
+            if not self._load_conversation(conversation_id):
+                return {}
+
+        conversation = self.active_conversations[conversation_id]
+
+        summary = {
+            "id": conversation_id,
+            "user_id": conversation["user_id"],
+            "agent_type": conversation["agent_type"],
+            "started_at": conversation["started_at"],
+            "message_count": len(conversation["messages"]),
+            "status": conversation["status"],
+            "last_activity": conversation["messages"][-1]["timestamp"]
+            if conversation["messages"]
+            else None,
+        }
+
+        return summary
 
     def update_context(self, conversation_id: str, context_updates: Dict[str, Any]) -> bool:
         """Update conversation context."""
@@ -109,29 +194,6 @@ class ConversationHandler:
 
         logger.info(f"Ended conversation {conversation_id}")
         return True
-
-    def get_conversation_summary(self, conversation_id: str) -> Dict[str, Any]:
-        """Get a summary of the conversation."""
-
-        if conversation_id not in self.active_conversations:
-            if not self._load_conversation(conversation_id):
-                return {}
-
-        conversation = self.active_conversations[conversation_id]
-
-        summary = {
-            "id": conversation_id,
-            "user_id": conversation["user_id"],
-            "agent_type": conversation["agent_type"],
-            "started_at": conversation["started_at"],
-            "message_count": len(conversation["messages"]),
-            "status": conversation["status"],
-            "last_activity": conversation["messages"][-1]["timestamp"]
-            if conversation["messages"]
-            else None,
-        }
-
-        return summary
 
     def list_user_conversations(self, user_id: str) -> List[Dict[str, Any]]:
         """List all conversations for a user."""
