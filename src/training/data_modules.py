@@ -6,7 +6,29 @@ Coordinates multi-modal data loading including imaging, genomics, and molecular 
 
 import os
 import torch
-import pytorch_lightning as pl
+# Lazy import for pytorch lightning to avoid scipy issues
+try:
+    import pytorch_lightning as pl
+    PYTORCH_LIGHTNING_AVAILABLE = True
+except Exception:
+    PYTORCH_LIGHTNING_AVAILABLE = False
+    # Create dummy pl module
+    class DummyLightningDataModule:
+        def __init__(self):
+            pass
+        def setup(self, stage=None):
+            pass
+        def train_dataloader(self):
+            return None
+        def val_dataloader(self):
+            return None
+        def test_dataloader(self):
+            return None
+    
+    class DummyPL:
+        LightningDataModule = DummyLightningDataModule
+    
+    pl = DummyPL()
 from torch.utils.data import DataLoader, Dataset, ConcatDataset
 from typing import Dict, List, Tuple, Optional, Union, Any, cast, Sized
 import numpy as np

@@ -36,7 +36,7 @@ from src.agents.openai_agent import OpenPerturbationAgent, AnalysisResult, Exper
 from src.agents.conversation_handler import ConversationHandler
 from src.agents.agent_tools import AgentTools, PerturbationAnalysisTools
 from src.data.loaders.imaging_loader import HighContentImagingLoader, HighContentImagingDataset
-from src.training.losses import (
+from src.training.training_losses import (
     CausalConsistencyLoss, ContrastiveLoss, UncertaintyLoss, 
     StructuralLoss, BiologicalConsistencyLoss, MultiTaskLoss
 )
@@ -297,7 +297,7 @@ class TestUtilities:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             try:
-                from src.training.metrics import OpenPerturbationMetricCollection
+                from src.training.training_metrics import OpenPerturbationMetricCollection
                 # Test with dummy configuration
                 metrics = OpenPerturbationMetricCollection({})
                 assert isinstance(metrics, object)
@@ -328,7 +328,7 @@ class TestTraining:
             try:
                 from src.training.lightning_modules import CausalVAELightningModule
                 from src.training.data_modules import PerturbationDataModule
-                from src.training.metrics import OpenPerturbationMetricCollection
+                from src.training.training_metrics import OpenPerturbationMetricCollection
                 
                 assert CausalVAELightningModule is not None
                 assert PerturbationDataModule is not None

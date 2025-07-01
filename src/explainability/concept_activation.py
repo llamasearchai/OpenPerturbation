@@ -14,16 +14,48 @@ from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass
 from pathlib import Path
 import logging
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, classification_report
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+
+# Lazy imports for plotting - only import when needed
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    MATPLOTLIB_AVAILABLE = True
+except Exception:
+    MATPLOTLIB_AVAILABLE = False
+    plt = None
+    sns = None
+
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    from plotly.subplots import make_subplots
+    PLOTLY_AVAILABLE = True
+except Exception:
+    PLOTLY_AVAILABLE = False
+    go = None
+    px = None
+    make_subplots = None
 from collections import defaultdict
 import json
+import warnings
+
+# Set availability flags for lazy imports
+SKLEARN_AVAILABLE = False
+SCIPY_AVAILABLE = False
+
+# Check sklearn availability
+try:
+    import sklearn
+    SKLEARN_AVAILABLE = True
+except Exception:
+    pass
+
+# Check scipy availability  
+try:
+    import scipy
+    SCIPY_AVAILABLE = True
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
 

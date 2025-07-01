@@ -60,7 +60,7 @@ class _LassoCVStub:  # noqa: D101 – minimal stub
         return np.zeros(len(x))
 
     @property
-    def coef_(self) -> np.ndarray:  # type: ignore[override] – stub attribute
+    def coef_(self) -> np.ndarray:  # type: ignore[override]  # stub attribute
         """Return a zero-initialised coefficient vector for compatibility."""
         return np.array([])
 
@@ -506,8 +506,10 @@ class CausalDiscoveryEngine:
             hubs, auths = nx.hits(G, max_iter=1000, normalized=True)
             hub_scores = [hubs.get(i, 0.0) for i in G.nodes()]
             auth_scores = [auths.get(i, 0.0) for i in G.nodes()]
-        except (nx.PowerIterationFailedConvergence, nx.NetworkXError):
-            hub_scores = auth_scores = [0.0] * d
+        except Exception:
+            # Fallback to degree centrality if HITS fails (e.g., ARPACK errors)
+            deg_cent = nx.degree_centrality(G)
+            hub_scores = auth_scores = [deg_cent.get(i, 0.0) for i in G.nodes()]
 
         return {
             "num_edges": num_edges,

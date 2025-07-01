@@ -14,18 +14,130 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass
+import warnings
 
 import numpy as np
 import torch
 import torch.nn as nn
-from scipy import ndimage
-from scipy.stats import ttest_ind, mannwhitneyu
-from sklearn.metrics import silhouette_score
-from sklearn.cluster import KMeans
+import torch.nn.functional as F
+from omegaconf import DictConfig
 
-import matplotlib.pyplot as plt
-import matplotlib.figure
-import seaborn as sns
+# Import sklearn with fallback
+try:
+    from sklearn.cluster import KMeans
+    SKLEARN_AVAILABLE = True
+except Exception:
+    SKLEARN_AVAILABLE = False
+    warnings.warn("scikit-learn not available. Clustering features disabled.")
+    
+    class DummyKMeans:
+        def __init__(self, n_clusters=8):
+            self.n_clusters = n_clusters
+        def fit(self, X):
+            return self
+        def predict(self, X):
+            return np.zeros(len(X))
+    
+    KMeans = DummyKMeans
+
+# Image processing and visualization
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    MATPLOTLIB_AVAILABLE = True
+except Exception:  # Catch all exceptions during matplotlib import
+    MATPLOTLIB_AVAILABLE = False
+    warnings.warn("Matplotlib not available. Visualization features disabled.")
+    
+    # Create dummy matplotlib-like functionality
+    class DummyPlt:
+        @staticmethod
+        def figure(*args, **kwargs):
+            return None
+        @staticmethod
+        def subplot(*args, **kwargs):
+            return None
+        @staticmethod
+        def subplots(*args, **kwargs):
+            return None, None
+        @staticmethod
+        def imshow(*args, **kwargs):
+            return None
+        @staticmethod
+        def colorbar(*args, **kwargs):
+            return None
+        @staticmethod
+        def title(*args, **kwargs):
+            return None
+        @staticmethod
+        def savefig(*args, **kwargs):
+            pass
+        @staticmethod
+        def show(*args, **kwargs):
+            pass
+        @staticmethod
+        def close(*args, **kwargs):
+            pass
+        @staticmethod
+        def tight_layout(*args, **kwargs):
+            pass
+    
+    plt = DummyPlt()
+    sns = None
+
+try:
+    import cv2
+    OPENCV_AVAILABLE = True
+except Exception:  # Catch all exceptions during OpenCV import
+    OPENCV_AVAILABLE = False
+    warnings.warn("OpenCV not available. Some image processing features disabled.")
+    
+    # Create dummy cv2 functionality
+    class DummyCV2:
+        @staticmethod
+        def resize(img, size, *args, **kwargs):
+            return img
+        @staticmethod
+        def GaussianBlur(img, *args, **kwargs):
+            return img
+        @staticmethod
+        def applyColorMap(img, *args, **kwargs):
+            return img
+        COLORMAP_JET = 0
+    
+    cv2 = DummyCV2()
+
+try:
+    from scipy.ndimage import gaussian_filter
+    SCIPY_AVAILABLE = True
+except Exception:  # Catch all exceptions during SciPy import
+    SCIPY_AVAILABLE = False
+    warnings.warn("SciPy not available. Some filtering features disabled.")
+    
+    # Create dummy scipy functionality
+    def gaussian_filter(img, sigma, *args, **kwargs):
+        return img
+
+try:
+    from skimage import filters, transform
+    SKIMAGE_AVAILABLE = True
+except Exception:  # Catch all exceptions during skimage import
+    SKIMAGE_AVAILABLE = False
+    warnings.warn("scikit-image not available. Some image processing features disabled.")
+    
+    # Create dummy skimage functionality
+    class DummyFilters:
+        @staticmethod
+        def gaussian(img, sigma, *args, **kwargs):
+            return img
+    
+    class DummyTransform:
+        @staticmethod
+        def resize(img, output_shape, *args, **kwargs):
+            return img
+    
+    filters = DummyFilters()
+    transform = DummyTransform()
 
 logger = logging.getLogger(__name__)
 

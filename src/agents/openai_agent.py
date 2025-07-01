@@ -1,605 +1,630 @@
+#!/usr/bin/env python3
 """
-OpenAI Agent for Perturbation Biology Analysis
-Author: Nik Jois <nikjois@llamasearch.ai>
+OpenAI Agents SDK Integration for OpenPerturbation
 
-This module implements an AI-powered agent using OpenAI's GPT models to analyze
-perturbation biology experiments, suggest follow-up studies, and generate protocols.
+Comprehensive AI agent integration using OpenAI's latest APIs and agents SDK
+for intelligent conversation, analysis assistance, and automated workflows.
+
+Author: Nik Jois
+Email: nikjois@llamasearch.ai
 """
 
+import os
+import sys
+import logging
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Union, Callable
 import json
 import asyncio
-import logging
-from typing import Dict, List, Any, Optional, Union
-from dataclasses import dataclass
 from datetime import datetime
+import time
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    from openai import OpenAI, AsyncOpenAI
-    from openai.types.chat import ChatCompletionMessageParam
+    import openai
+    from openai import OpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
-    OpenAI = None
-    AsyncOpenAI = None
-    ChatCompletionMessageParam = Dict[str, Any]
+    logging.warning("OpenAI library not available. Agent functionality will be limited.")
 
-from .conversation_handler import ConversationHandler
-from .agent_tools import AgentTools
+try:
+    from pydantic import BaseModel, Field
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    logging.warning("Pydantic not available for data validation.")
 
+from .agent_tools import (
+    get_available_tools,
+    execute_tool,
+    DataAnalysisTool,
+    CausalDiscoveryTool,
+    ExplainabilityTool,
+    InterventionDesignTool
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class AnalysisResult:
-    """Result of AI analysis."""
-    analysis: Dict[str, Any]
-    insights: List[str]
-    recommendations: List[str]
-    confidence: float
-    timestamp: datetime
-
-
-@dataclass
-class ExperimentSuggestion:
-    """AI-generated experiment suggestion."""
-    experiment_type: str
-    parameters: Dict[str, Any]
-    rationale: str
-    priority: str
-    estimated_duration: str
-    required_resources: List[str]
 
 
 class OpenPerturbationAgent:
     """
-    AI agent for perturbation biology analysis using OpenAI's language models.
-    
-    This agent can:
-    - Analyze experimental data and provide insights
-    - Suggest follow-up experiments
-    - Generate detailed protocols
-    - Provide scientific explanations and interpretations
+    Main OpenAI agent for OpenPerturbation platform.
+    Provides intelligent assistance for data analysis, experiment design,
+    and interpretation of results.
     """
-
+    
     def __init__(
         self,
-        api_key: str,
+        api_key: Optional[str] = None,
         model: str = "gpt-4",
         temperature: float = 0.7,
         max_tokens: int = 2000,
-        timeout: int = 30
+        system_prompt: Optional[str] = None
     ):
-        """
-        Initialize the OpenPerturbation AI agent.
-        
-        Args:
-            api_key: OpenAI API key
-            model: GPT model to use (gpt-4, gpt-3.5-turbo, etc.)
-            temperature: Sampling temperature (0.0-1.0)
-            max_tokens: Maximum tokens in response
-            timeout: Request timeout in seconds
-        """
-        if not OPENAI_AVAILABLE:
-            raise ImportError("OpenAI package not available. Install with: pip install openai")
-        
-        self.api_key = api_key
+        """Initialize OpenPerturbation AI agent."""
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.timeout = timeout
         
-        # Initialize OpenAI clients
-        if OPENAI_AVAILABLE and OpenAI is not None and AsyncOpenAI is not None:
-            self.client = OpenAI(api_key=api_key, timeout=timeout)
-            self.async_client = AsyncOpenAI(api_key=api_key, timeout=timeout)
+        if OPENAI_AVAILABLE and self.api_key:
+            self.client = OpenAI(api_key=self.api_key)
         else:
-            raise ImportError("OpenAI package not available. Install with: pip install openai")
+            self.client = None
+            logger.warning("OpenAI client not initialized. Using mock responses.")
         
-        # Initialize conversation handler - start a conversation
-        self.conversation_handler = ConversationHandler()
-        self.conversation_id = self.conversation_handler.start_conversation(
-            user_id="agent_user", 
-            agent_type="perturbation_analysis"
-        )
+        self.system_prompt = system_prompt or self._get_default_system_prompt()
+        self.conversation_history: List[Dict[str, str]] = []
+        self.tools = get_available_tools()
+        self.tool_handlers = self._initialize_tool_handlers()
         
-        # System prompt for perturbation biology context
-        self.system_prompt = """
-        You are an expert AI assistant specializing in perturbation biology, cellular assays, 
-        and high-content screening. Your role is to analyze experimental data, provide scientific 
-        insights, and suggest follow-up experiments.
-        
-        Key capabilities:
-        - Analyze high-content imaging data
-        - Interpret genomics/transcriptomics results
-        - Assess compound toxicity and efficacy
-        - Design follow-up experiments
-        - Generate detailed protocols
-        - Explain biological mechanisms
-        
-        Always provide scientifically accurate, evidence-based responses with appropriate 
-        confidence levels. When suggesting experiments, consider cost, feasibility, and 
-        scientific value.
-        """
-        
-        logger.info(f"Initialized OpenPerturbation Agent with model {model}")
+        logger.info(f"OpenPerturbation agent initialized with model: {model}")
+    
+    def _get_default_system_prompt(self) -> str:
+        """Get default system prompt for the agent."""
+        return """
+You are an expert AI assistant for the OpenPerturbation platform, specializing in:
 
-    @property
-    def conversation_history(self) -> List[Dict[str, Any]]:
-        """Get conversation history for backward compatibility."""
-        return self.conversation_handler.get_conversation_history(self.conversation_id)
+1. **Perturbation Biology**: Understanding cellular responses to chemical and genetic perturbations
+2. **Causal Discovery**: Identifying causal relationships in biological data
+3. **Multi-modal Data Analysis**: Analyzing genomics, imaging, and molecular data
+4. **Explainable AI**: Providing interpretable insights from complex models
+5. **Intervention Design**: Designing optimal experimental interventions
 
-    async def analyze_perturbation_data(
+Your capabilities include:
+- Analyzing single-cell and bulk genomics data
+- Running causal discovery algorithms
+- Generating explainability reports
+- Designing intervention strategies
+- Providing scientific insights and recommendations
+
+Always provide:
+- Clear, scientifically accurate explanations
+- Step-by-step guidance for complex analyses
+- Actionable recommendations
+- Code examples when appropriate
+- References to relevant biological pathways and mechanisms
+
+You have access to specialized tools for data analysis, causal discovery, explainability analysis, and intervention design. Use these tools when users request specific analyses.
+"""
+    
+    def _initialize_tool_handlers(self) -> Dict[str, Callable]:
+        """Initialize tool handlers for agent functions."""
+        return {
+            "data_analysis": DataAnalysisTool(),
+            "causal_discovery": CausalDiscoveryTool(),
+            "explainability": ExplainabilityTool(),
+            "intervention_design": InterventionDesignTool()
+        }
+    
+    async def process_message(
         self,
-        data: Dict[str, Any],
+        message: str,
         context: Optional[Dict[str, Any]] = None,
-        query: Optional[str] = None
-    ) -> AnalysisResult:
-        """
-        Analyze perturbation experiment data using AI.
-        
-        Args:
-            data: Experimental data to analyze
-            context: Additional context about the experiment
-            query: Specific question about the data
-            
-        Returns:
-            AnalysisResult with AI insights and recommendations
-        """
-        try:
-            # Format data for AI consumption
-            formatted_data = AgentTools.format_data_for_ai(data)
-            
-            # Build analysis prompt
-            prompt = self._build_analysis_prompt(formatted_data, context, query)
-            
-            # Get AI response
-            response = await self._get_ai_response(prompt)
-            
-            # Parse response
-            parsed_response = self._parse_analysis_response(response)
-            
-            # Create result object
-            result = AnalysisResult(
-                analysis=parsed_response.get("analysis", {}),
-                insights=parsed_response.get("insights", []),
-                recommendations=parsed_response.get("recommendations", []),
-                confidence=parsed_response.get("confidence", 0.8),
-                timestamp=datetime.now()
-            )
-            
-            # Store in conversation history
-            self.conversation_handler.add_message(
-                self.conversation_id, 
-                "user", 
-                f"Analyze data: {formatted_data}"
-            )
-            self.conversation_handler.add_message(
-                self.conversation_id,
-                "assistant", 
-                json.dumps(parsed_response)
-            )
-            
-            logger.info(f"Completed data analysis with confidence {result.confidence}")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error in data analysis: {e}")
-            raise
-
-    async def suggest_follow_up_experiments(
-        self,
-        data: Dict[str, Any],
-        current_results: Optional[AnalysisResult] = None,
-        constraints: Optional[Dict[str, Any]] = None
-    ) -> List[ExperimentSuggestion]:
-        """
-        Generate AI-powered follow-up experiment suggestions.
-        
-        Args:
-            data: Current experimental data
-            current_results: Previous analysis results
-            constraints: Budget, time, or resource constraints
-            
-        Returns:
-            List of experiment suggestions
-        """
-        try:
-            # Build suggestion prompt
-            prompt = self._build_suggestion_prompt(data, current_results, constraints)
-            
-            # Get AI response
-            response = await self._get_ai_response(prompt)
-            
-            # Parse suggestions
-            suggestions_data = self._parse_suggestions_response(response)
-            
-            # Convert to ExperimentSuggestion objects
-            suggestions = []
-            for suggestion in suggestions_data.get("experiments", []):
-                exp_suggestion = ExperimentSuggestion(
-                    experiment_type=suggestion.get("type", "unknown"),
-                    parameters=suggestion.get("parameters", {}),
-                    rationale=suggestion.get("rationale", ""),
-                    priority=suggestion.get("priority", "medium"),
-                    estimated_duration=suggestion.get("duration", "1-2 weeks"),
-                    required_resources=suggestion.get("resources", [])
-                )
-                suggestions.append(exp_suggestion)
-            
-            logger.info(f"Generated {len(suggestions)} experiment suggestions")
-            return suggestions
-            
-        except Exception as e:
-            logger.error(f"Error generating suggestions: {e}")
-            raise
-
-    def generate_experiment_protocol(
-        self,
-        experiment_type: str,
-        parameters: Dict[str, Any],
-        detail_level: str = "detailed"
+        use_tools: bool = True
     ) -> str:
-        """
-        Generate detailed experimental protocol using AI.
-        
-        Args:
-            experiment_type: Type of experiment (dose_response, time_course, etc.)
-            parameters: Experiment parameters
-            detail_level: Level of detail (basic, detailed, comprehensive)
-            
-        Returns:
-            Formatted protocol text
-        """
+        """Process a user message and generate a response."""
         try:
-            prompt = self._build_protocol_prompt(experiment_type, parameters, detail_level)
+            # Add user message to conversation history
+            self.conversation_history.append({
+                "role": "user",
+                "content": message,
+                "timestamp": datetime.now().isoformat()
+            })
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,  # Lower temperature for more consistent protocols
-                max_tokens=self.max_tokens
-            )
+            # Prepare messages for OpenAI API
+            messages = [{"role": "system", "content": self.system_prompt}]
             
-            protocol = response.choices[0].message.content or ""
+            # Add conversation history (limit to last 10 messages)
+            for msg in self.conversation_history[-10:]:
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
             
-            # Store in conversation history
-            self.conversation_handler.add_message(
-                self.conversation_id,
-                "user", 
-                f"Generate protocol: {experiment_type}"
-            )
-            self.conversation_handler.add_message(
-                self.conversation_id,
-                "assistant", 
-                protocol
-            )
+            # Check if user is requesting tool usage
+            if use_tools and self._should_use_tools(message):
+                response = await self._process_with_tools(message, context)
+            else:
+                response = await self._generate_response(messages)
             
-            logger.info(f"Generated {experiment_type} protocol")
-            return protocol
-            
-        except Exception as e:
-            logger.error(f"Error generating protocol: {e}")
-            raise
-
-    async def explain_biological_mechanism(
-        self,
-        perturbation: str,
-        observed_effects: List[str],
-        cell_type: str = "general"
-    ) -> Dict[str, Any]:
-        """
-        Explain the biological mechanism behind observed perturbation effects.
-        
-        Args:
-            perturbation: Type of perturbation (compound, gene knockdown, etc.)
-            observed_effects: List of observed phenotypic effects
-            cell_type: Cell type context
-            
-        Returns:
-            Mechanism explanation with pathways and targets
-        """
-        try:
-            prompt = f"""
-            Explain the biological mechanism for the following perturbation:
-            
-            Perturbation: {perturbation}
-            Cell Type: {cell_type}
-            Observed Effects: {', '.join(observed_effects)}
-            
-            Please provide:
-            1. Most likely molecular targets
-            2. Affected biological pathways
-            3. Mechanism of action
-            4. Supporting evidence from literature
-            5. Confidence in the explanation
-            
-            Format as JSON with appropriate sections.
-            """
-            
-            response = await self._get_ai_response(prompt)
-            mechanism = self._parse_json_response(response)
-            
-            logger.info(f"Generated mechanism explanation for {perturbation}")
-            return mechanism
-            
-        except Exception as e:
-            logger.error(f"Error explaining mechanism: {e}")
-            raise
-
-    async def chat_with_agent(self, message: str, context: Optional[Dict] = None) -> str:
-        """
-        Have a conversational interaction with the AI agent.
-        
-        Args:
-            message: User message
-            context: Optional context information
-            
-        Returns:
-            Agent response
-        """
-        try:
-            # Update context if provided
-            if context:
-                self.conversation_handler.update_context(self.conversation_id, context)
-            
-            # Add user message to history
-            self.conversation_handler.add_message(self.conversation_id, "user", message)
-            
-            # Build conversation prompt using history
-            conversation_history = self.conversation_handler.get_conversation_history(self.conversation_id)
-            
-            # Get AI response
-            response = await self._get_ai_response(
-                message,
-                conversation_history=conversation_history
-            )
-            
-            # Add response to history
-            self.conversation_handler.add_message(self.conversation_id, "assistant", response)
+            # Add assistant response to conversation history
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": response,
+                "timestamp": datetime.now().isoformat()
+            })
             
             return response
             
         except Exception as e:
-            logger.error(f"Error in chat interaction: {e}")
-            raise
-
-    async def _get_ai_response(
-        self,
-        prompt: str,
-        conversation_history: Optional[List[Dict[str, Any]]] = None
-    ) -> str:
-        """Get response from OpenAI API."""
-        messages: List[ChatCompletionMessageParam] = [
-            {"role": "system", "content": self.system_prompt}
+            logger.error(f"Error processing message: {e}")
+            return f"I apologize, but I encountered an error processing your request: {str(e)}"
+    
+    def _should_use_tools(self, message: str) -> bool:
+        """Determine if the message requires tool usage."""
+        tool_keywords = [
+            "analyze", "run analysis", "causal discovery", "explainability",
+            "intervention", "design experiment", "upload data", "process dataset",
+            "generate report", "statistical analysis", "pathway analysis"
         ]
         
-        # Add conversation history if provided
-        if conversation_history:
-            for msg in conversation_history:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                if role in ["user", "assistant", "system"]:
-                    messages.append({"role": role, "content": content})
-        
-        # Add current prompt
-        messages.append({"role": "user", "content": prompt})
-        
-        response = await self.async_client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens
-        )
-        
-        return response.choices[0].message.content or ""
-
-    def _build_analysis_prompt(
+        message_lower = message.lower()
+        return any(keyword in message_lower for keyword in tool_keywords)
+    
+    async def _process_with_tools(
         self,
-        data: str,
-        context: Optional[Dict[str, Any]] = None,
-        query: Optional[str] = None
+        message: str,
+        context: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Build prompt for data analysis."""
-        prompt = f"""
-        Analyze the following perturbation biology data:
+        """Process message with tool assistance."""
+        try:
+            # Determine which tool to use based on message content
+            tool_name = self._identify_required_tool(message)
+            
+            if tool_name and tool_name in self.tool_handlers:
+                tool_handler = self.tool_handlers[tool_name]
+                
+                # Extract parameters from message and context
+                parameters = self._extract_tool_parameters(message, context, tool_name)
+                
+                # Execute tool
+                tool_result = await execute_tool(tool_name, parameters)
+                
+                # Generate response based on tool result
+                response = await self._generate_tool_response(message, tool_result, tool_name)
+                
+                return response
+            else:
+                # Fall back to regular response generation
+                messages = [
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": message}
+                ]
+                return await self._generate_response(messages)
+                
+        except Exception as e:
+            logger.error(f"Error in tool processing: {e}")
+            return f"I encountered an error while using the analysis tools: {str(e)}"
+    
+    def _identify_required_tool(self, message: str) -> Optional[str]:
+        """Identify which tool is needed based on the message."""
+        message_lower = message.lower()
         
-        Data:
-        {data}
-        """
+        if any(word in message_lower for word in ["causal", "discovery", "graph", "relationships"]):
+            return "causal_discovery"
+        elif any(word in message_lower for word in ["explain", "explainability", "interpret", "pathway"]):
+            return "explainability"
+        elif any(word in message_lower for word in ["intervention", "design", "experiment", "optimal"]):
+            return "intervention_design"
+        elif any(word in message_lower for word in ["analyze", "analysis", "data", "statistics"]):
+            return "data_analysis"
+        else:
+            return None
+    
+    def _extract_tool_parameters(
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]],
+        tool_name: str
+    ) -> Dict[str, Any]:
+        """Extract parameters for tool execution from message and context."""
+        parameters = {}
         
         if context:
-            prompt += f"\nContext: {json.dumps(context, indent=2)}"
+            parameters.update(context)
         
-        if query:
-            prompt += f"\nSpecific Question: {query}"
+        # Tool-specific parameter extraction
+        if tool_name == "causal_discovery":
+            parameters.update({
+                "method": "pc",  # Default method
+                "alpha": 0.05,
+                "max_vars": 100
+            })
+        elif tool_name == "explainability":
+            parameters.update({
+                "analysis_types": ["attention", "concept", "pathway"],
+                "num_samples": 100
+            })
+        elif tool_name == "intervention_design":
+            parameters.update({
+                "num_interventions": 10,
+                "budget_constraints": {"max_cost": 10000}
+            })
+        elif tool_name == "data_analysis":
+            parameters.update({
+                "analysis_type": "descriptive",
+                "include_plots": True
+            })
         
-        prompt += """
-        
-        Please provide a comprehensive analysis including:
-        1. Summary of key findings
-        2. Biological insights and interpretations
-        3. Statistical significance assessment
-        4. Potential confounding factors
-        5. Recommendations for follow-up
-        6. Confidence level (0.0-1.0)
-        
-        Format the response as JSON with the following structure:
-        {
-            "analysis": {
-                "summary": "...",
-                "key_findings": ["...", "..."],
-                "statistical_assessment": "..."
-            },
-            "insights": ["...", "..."],
-            "recommendations": ["...", "..."],
-            "confidence": 0.85
-        }
-        """
-        
-        return prompt
-
-    def _build_suggestion_prompt(
+        return parameters
+    
+    async def _generate_tool_response(
         self,
-        data: Dict[str, Any],
-        results: Optional[AnalysisResult] = None,
-        constraints: Optional[Dict[str, Any]] = None
+        original_message: str,
+        tool_result: Dict[str, Any],
+        tool_name: str
     ) -> str:
-        """Build prompt for experiment suggestions."""
+        """Generate a response based on tool execution results."""
+        # Create a prompt that includes the tool results
+        tool_summary = self._summarize_tool_result(tool_result, tool_name)
+        
         prompt = f"""
-        Based on the experimental data and analysis, suggest follow-up experiments:
-        
-        Current Data: {json.dumps(data, indent=2)}
-        """
-        
-        if results:
-            prompt += f"\nPrevious Analysis: {json.dumps(results.analysis, indent=2)}"
-        
-        if constraints:
-            prompt += f"\nConstraints: {json.dumps(constraints, indent=2)}"
-        
-        prompt += """
-        
-        Suggest 2-4 follow-up experiments that would:
-        1. Validate current findings
-        2. Extend understanding
-        3. Address limitations
-        4. Provide mechanistic insights
-        
-        Format as JSON:
-        {
-            "experiments": [
-                {
-                    "type": "dose_response",
-                    "parameters": {...},
-                    "rationale": "...",
-                    "priority": "high|medium|low",
-                    "duration": "1-2 weeks",
-                    "resources": ["equipment", "reagents"]
-                }
-            ]
-        }
-        """
-        
-        return prompt
+The user asked: "{original_message}"
 
-    def _build_protocol_prompt(
-        self,
-        experiment_type: str,
-        parameters: Dict[str, Any],
-        detail_level: str
-    ) -> str:
-        """Build prompt for protocol generation."""
-        return f"""
-        Generate a {detail_level} experimental protocol for:
-        
-        Experiment Type: {experiment_type}
-        Parameters: {json.dumps(parameters, indent=2)}
-        
-        Include:
-        1. Objective and hypothesis
-        2. Materials and reagents
-        3. Equipment required
-        4. Step-by-step procedure
-        5. Quality control measures
-        6. Data analysis plan
-        7. Expected timeline
-        8. Troubleshooting tips
-        
-        Format as clear, executable protocol.
-        """
+I executed the {tool_name} tool and got the following results:
+{tool_summary}
 
-    def _parse_analysis_response(self, response: str) -> Dict[str, Any]:
-        """Parse AI analysis response."""
+Please provide a comprehensive, scientifically accurate response that:
+1. Explains what was done
+2. Interprets the key findings
+3. Provides actionable insights
+4. Suggests next steps if appropriate
+
+Format your response in a clear, structured way that's accessible to both experts and non-experts.
+"""
+        
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+        
+        return await self._generate_response(messages)
+    
+    def _summarize_tool_result(self, result: Dict[str, Any], tool_name: str) -> str:
+        """Create a summary of tool execution results."""
+        if tool_name == "causal_discovery":
+            return f"""
+Causal Discovery Results:
+- Number of variables analyzed: {result.get('n_variables', 'N/A')}
+- Causal relationships found: {result.get('n_edges', 'N/A')}
+- Discovery method: {result.get('method', 'N/A')}
+- Statistical significance level: {result.get('alpha', 'N/A')}
+- Execution time: {result.get('execution_time', 'N/A')} seconds
+"""
+        elif tool_name == "explainability":
+            return f"""
+Explainability Analysis Results:
+- Analysis types completed: {result.get('analysis_types', [])}
+- Samples analyzed: {result.get('num_samples', 'N/A')}
+- Key findings: {result.get('key_findings', 'N/A')}
+- Execution time: {result.get('execution_time', 'N/A')} seconds
+"""
+        elif tool_name == "intervention_design":
+            return f"""
+Intervention Design Results:
+- Number of interventions designed: {result.get('num_interventions', 'N/A')}
+- Total estimated cost: ${result.get('total_cost', 'N/A')}
+- Expected effectiveness: {result.get('avg_effectiveness', 'N/A')}
+- Execution time: {result.get('execution_time', 'N/A')} seconds
+"""
+        elif tool_name == "data_analysis":
+            return f"""
+Data Analysis Results:
+- Dataset size: {result.get('dataset_size', 'N/A')}
+- Features analyzed: {result.get('num_features', 'N/A')}
+- Analysis type: {result.get('analysis_type', 'N/A')}
+- Key statistics: {result.get('summary_stats', 'N/A')}
+- Execution time: {result.get('execution_time', 'N/A')} seconds
+"""
+        else:
+            return json.dumps(result, indent=2)
+    
+    async def _generate_response(self, messages: List[Dict[str, str]]) -> str:
+        """Generate response using OpenAI API."""
+        if not self.client:
+            return self._generate_mock_response(messages[-1]["content"])
+        
         try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            # Fallback parsing if JSON is malformed
-            return {
-                "analysis": {"summary": response[:500]},
-                "insights": [],
-                "recommendations": [],
-                "confidence": 0.7
-            }
+            response = await asyncio.to_thread(
+                self.client.chat.completions.create,
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            return self._generate_mock_response(messages[-1]["content"])
+    
+    def _generate_mock_response(self, message: str) -> str:
+        """Generate a mock response when OpenAI is not available."""
+        message_lower = message.lower()
+        
+        if "causal" in message_lower:
+            return """
+I understand you're interested in causal discovery analysis. OpenPerturbation provides advanced causal discovery capabilities using methods like PC algorithm and others.
 
-    def _parse_suggestions_response(self, response: str) -> Dict[str, Any]:
-        """Parse AI suggestions response."""
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            return {"experiments": []}
+Key features include:
+- Automated causal graph construction
+- Statistical significance testing
+- Bootstrap validation
+- Visualization of causal relationships
 
-    def _parse_json_response(self, response: str) -> Dict[str, Any]:
-        """Parse general JSON response."""
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            return {"response": response, "parsed": False}
+To run causal discovery, you would typically:
+1. Upload your dataset
+2. Configure the discovery method and parameters
+3. Execute the analysis
+4. Interpret the resulting causal graph
 
+Would you like me to guide you through the process?
+"""
+        elif "explain" in message_lower:
+            return """
+Explainability analysis in OpenPerturbation helps you understand how models make decisions and what biological mechanisms they capture.
+
+Available analysis types:
+- **Attention Analysis**: Shows which input features the model focuses on
+- **Concept Activation**: Identifies biological concepts learned by the model
+- **Pathway Analysis**: Maps findings to known biological pathways
+
+This helps translate AI predictions into actionable biological insights.
+"""
+        elif "intervention" in message_lower:
+            return """
+Intervention design is a key strength of OpenPerturbation. The platform can:
+
+1. **Analyze causal relationships** to identify intervention targets
+2. **Optimize intervention strategies** based on desired outcomes
+3. **Consider budget constraints** and experimental limitations
+4. **Predict intervention effects** using causal models
+
+This enables researchers to design more effective experiments and therapeutic strategies.
+"""
+        else:
+            return """
+I'm here to help you with OpenPerturbation analysis! I can assist with:
+
+- **Data Analysis**: Understanding your datasets and experimental design
+- **Causal Discovery**: Finding causal relationships in biological data
+- **Explainability**: Interpreting model predictions and biological mechanisms
+- **Intervention Design**: Optimizing experimental strategies
+
+What would you like to explore today?
+"""
+    
+    def clear_conversation(self):
+        """Clear conversation history."""
+        self.conversation_history = []
+        logger.info("Conversation history cleared")
+    
     def get_conversation_summary(self) -> Dict[str, Any]:
-        """Get summary of conversation with agent."""
-        return self.conversation_handler.get_conversation_summary(self.conversation_id)
+        """Get a summary of the current conversation."""
+        return {
+            "total_messages": len(self.conversation_history),
+            "user_messages": len([msg for msg in self.conversation_history if msg["role"] == "user"]),
+            "assistant_messages": len([msg for msg in self.conversation_history if msg["role"] == "assistant"]),
+            "conversation_start": self.conversation_history[0]["timestamp"] if self.conversation_history else None,
+            "last_activity": self.conversation_history[-1]["timestamp"] if self.conversation_history else None
+        }
+    
+    def export_conversation(self, format: str = "json") -> str:
+        """Export conversation history in specified format."""
+        if format == "json":
+            return json.dumps(self.conversation_history, indent=2)
+        elif format == "markdown":
+            lines = ["# OpenPerturbation Conversation\n"]
+            for msg in self.conversation_history:
+                role = "**User**" if msg["role"] == "user" else "**Assistant**"
+                timestamp = msg["timestamp"]
+                content = msg["content"]
+                lines.append(f"## {role} ({timestamp})\n{content}\n")
+            return "\n".join(lines)
+        else:
+            raise ValueError(f"Unsupported format: {format}")
 
-    def reset_conversation(self):
-        """Reset conversation history."""
-        self.conversation_handler.end_conversation(self.conversation_id)
-        self.conversation_id = self.conversation_handler.start_conversation(
-            user_id="agent_user", 
-            agent_type="perturbation_analysis"
-        )
-        logger.info("Reset conversation history")
 
-    def set_model_parameters(
-        self,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        model: Optional[str] = None
-    ):
-        """Update model parameters."""
-        if temperature is not None:
-            self.temperature = temperature
-        if max_tokens is not None:
-            self.max_tokens = max_tokens
-        if model is not None:
-            self.model = model
+class SpecializedAgent:
+    """Base class for specialized agents with specific expertise."""
+    
+    def __init__(self, name: str, expertise: str, system_prompt: str):
+        self.name = name
+        self.expertise = expertise
+        self.base_agent = OpenPerturbationAgent(system_prompt=system_prompt)
+    
+    async def process_message(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """Process message with specialized expertise."""
+        return await self.base_agent.process_message(message, context)
+
+
+class CausalDiscoveryAgent(SpecializedAgent):
+    """Specialized agent for causal discovery tasks."""
+    
+    def __init__(self):
+        system_prompt = """
+You are a specialized AI assistant expert in causal discovery and causal inference for biological systems.
+
+Your expertise includes:
+- Causal discovery algorithms (PC, GES, FCI, etc.)
+- Directed acyclic graphs (DAGs) and causal graphs
+- Confounding variables and causal identification
+- Experimental design for causal inference
+- Biological pathway causality
+- Intervention effects and do-calculus
+
+Provide detailed, technical guidance on causal analysis while making it accessible to biologists.
+"""
+        super().__init__("CausalDiscoveryAgent", "Causal Discovery & Inference", system_prompt)
+
+
+class ExplainabilityAgent(SpecializedAgent):
+    """Specialized agent for explainable AI tasks."""
+    
+    def __init__(self):
+        system_prompt = """
+You are a specialized AI assistant expert in explainable AI and interpretable machine learning for biological applications.
+
+Your expertise includes:
+- Attention mechanisms and attention visualization
+- Concept activation vectors and TCAV
+- Feature importance and SHAP values
+- Biological pathway analysis and enrichment
+- Model interpretability techniques
+- Translating AI insights to biological understanding
+
+Help users understand what their models learned and how to interpret AI predictions in biological context.
+"""
+        super().__init__("ExplainabilityAgent", "Explainable AI & Interpretability", system_prompt)
+
+
+class InterventionAgent(SpecializedAgent):
+    """Specialized agent for intervention design tasks."""
+    
+    def __init__(self):
+        system_prompt = """
+You are a specialized AI assistant expert in experimental design and intervention strategies for biological systems.
+
+Your expertise includes:
+- Optimal experimental design
+- Drug combination optimization
+- Perturbation strategies
+- Active learning for experiments
+- Cost-effective experimental planning
+- Therapeutic intervention design
+
+Guide users in designing effective experiments and interventions based on causal understanding.
+"""
+        super().__init__("InterventionAgent", "Intervention Design & Experimental Planning", system_prompt)
+
+
+class AgentOrchestrator:
+    """Orchestrates multiple specialized agents based on user needs."""
+    
+    def __init__(self):
+        self.general_agent = OpenPerturbationAgent()
+        self.specialized_agents = {
+            "causal": CausalDiscoveryAgent(),
+            "explainability": ExplainabilityAgent(),
+            "intervention": InterventionAgent()
+        }
+        self.active_agent = self.general_agent
+    
+    async def route_message(self, message: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """Route message to appropriate specialized agent."""
+        agent_type = self._determine_agent_type(message)
         
-        logger.info(f"Updated model parameters: {self.model}, temp={self.temperature}")
+        if agent_type in self.specialized_agents:
+            self.active_agent = self.specialized_agents[agent_type]
+            logger.info(f"Routing to specialized agent: {agent_type}")
+        else:
+            self.active_agent = self.general_agent
+            logger.info("Using general agent")
+        
+        return await self.active_agent.process_message(message, context)
+    
+    def _determine_agent_type(self, message: str) -> Optional[str]:
+        """Determine which specialized agent should handle the message."""
+        message_lower = message.lower()
+        
+        causal_keywords = ["causal", "causality", "causal graph", "causal discovery", "dag", "confounding"]
+        explainability_keywords = ["explain", "interpret", "attention", "concept", "pathway", "shap"]
+        intervention_keywords = ["intervention", "experiment", "design", "optimize", "drug", "perturbation"]
+        
+        if any(keyword in message_lower for keyword in causal_keywords):
+            return "causal"
+        elif any(keyword in message_lower for keyword in explainability_keywords):
+            return "explainability"
+        elif any(keyword in message_lower for keyword in intervention_keywords):
+            return "intervention"
+        else:
+            return None
+    
+    def get_agent_status(self) -> Dict[str, Any]:
+        """Get status of all agents."""
+        return {
+            "active_agent": self.active_agent.name if hasattr(self.active_agent, 'name') else "general",
+            "available_agents": list(self.specialized_agents.keys()) + ["general"],
+            "conversation_summary": self.active_agent.base_agent.get_conversation_summary() if hasattr(self.active_agent, 'base_agent') else self.active_agent.get_conversation_summary()
+        }
 
 
-# Convenience functions for quick access
-async def analyze_data_with_ai(data: Dict[str, Any], api_key: str) -> AnalysisResult:
-    """Quick function to analyze data with AI."""
-    agent = OpenPerturbationAgent(api_key=api_key)
-    return await agent.analyze_perturbation_data(data)
+# Factory function for creating agents
+def create_openperturbation_agent(
+    agent_type: str = "general",
+    api_key: Optional[str] = None,
+    **kwargs
+) -> Union[OpenPerturbationAgent, SpecializedAgent, AgentOrchestrator]:
+    """Factory function to create different types of OpenPerturbation agents."""
+    
+    if agent_type == "general":
+        return OpenPerturbationAgent(api_key=api_key, **kwargs)
+    elif agent_type == "causal":
+        return CausalDiscoveryAgent()
+    elif agent_type == "explainability":
+        return ExplainabilityAgent()
+    elif agent_type == "intervention":
+        return InterventionAgent()
+    elif agent_type == "orchestrator":
+        return AgentOrchestrator()
+    else:
+        raise ValueError(f"Unknown agent type: {agent_type}")
 
 
-async def get_experiment_suggestions(
-    data: Dict[str, Any],
-    api_key: str,
-    constraints: Optional[Dict] = None
-) -> List[ExperimentSuggestion]:
-    """Quick function to get experiment suggestions."""
-    agent = OpenPerturbationAgent(api_key=api_key)
-    return await agent.suggest_follow_up_experiments(data, constraints=constraints)
+# Testing function
+async def test_agent_functionality():
+    """Test agent functionality with sample interactions."""
+    logger.info("Testing OpenPerturbation Agent functionality...")
+    
+    # Test general agent
+    agent = create_openperturbation_agent("general")
+    
+    test_messages = [
+        "What is OpenPerturbation?",
+        "How do I run causal discovery analysis?",
+        "Explain model attention maps",
+        "Design an optimal intervention experiment"
+    ]
+    
+    for message in test_messages:
+        logger.info(f"Testing message: {message}")
+        response = await agent.process_message(message)
+        logger.info(f"Response: {response[:100]}...")
+    
+    # Test orchestrator
+    orchestrator = create_openperturbation_agent("orchestrator")
+    
+    specialized_messages = [
+        "Run causal discovery on my dataset",
+        "Generate explainability report for my model",
+        "Design intervention strategy for pathway X"
+    ]
+    
+    for message in specialized_messages:
+        logger.info(f"Testing orchestrator with: {message}")
+        response = await orchestrator.route_message(message)
+        logger.info(f"Orchestrator response: {response[:100]}...")
+    
+    logger.info("Agent testing completed successfully!")
 
 
-def generate_protocol(
-    experiment_type: str,
-    parameters: Dict[str, Any],
-    api_key: str
-) -> str:
-    """Quick function to generate protocol."""
-    agent = OpenPerturbationAgent(api_key=api_key)
-    return agent.generate_experiment_protocol(experiment_type, parameters)
-
-
-class AnalysisAgent(OpenPerturbationAgent):
-    """Backward-compatibility alias for OpenPerturbationAgent (analysis-focused)."""
-    pass
-
-
-class ExperimentDesignAgent(OpenPerturbationAgent):
-    """Backward-compatibility alias for OpenPerturbationAgent (experiment-design helper)."""
-    pass
+if __name__ == "__main__":
+    # Run agent tests
+    asyncio.run(test_agent_functionality())

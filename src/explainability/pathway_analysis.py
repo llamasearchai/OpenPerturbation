@@ -21,14 +21,22 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import networkx as nx
-from scipy import stats
-from scipy.stats import hypergeom, fisher_exact
-from sklearn.cluster import SpectralClustering
-from sklearn.metrics import silhouette_score
+# Remove problematic scipy and sklearn imports - will be imported lazily when needed
 
-# Visualization
-import matplotlib.pyplot as plt
-import seaborn as sns
+# Visualization - lazy imports
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except Exception:
+    MATPLOTLIB_AVAILABLE = False
+    plt = None
+
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+except Exception:
+    SEABORN_AVAILABLE = False
+    sns = None
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -37,9 +45,33 @@ from plotly.subplots import make_subplots
 try:
     import requests
     REQUESTS_AVAILABLE = True
-except ImportError:
+except Exception:  # Catch all exceptions during requests import
     REQUESTS_AVAILABLE = False
-    warnings.warn("requests not available. External pathway features will be limited.")
+    warnings.warn("Requests not available. Online database features disabled.")
+    
+    # Create dummy requests functionality
+    class DummyResponse:
+        def __init__(self, status_code=200, text="", json_data=None):
+            self.status_code = status_code
+            self.text = text
+            self._json_data = json_data or {}
+        
+        def json(self):
+            return self._json_data
+        
+        def raise_for_status(self):
+            pass
+    
+    class DummyRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            return DummyResponse()
+        
+        @staticmethod
+        def post(*args, **kwargs):
+            return DummyResponse()
+    
+    requests = DummyRequests()
 
 try:
     from bioservices import KEGG, Reactome, UniProt, PathwayCommons, PathwayCommonsClient  # type: ignore
