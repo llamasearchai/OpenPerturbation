@@ -113,7 +113,7 @@ Always provide:
 You have access to specialized tools for data analysis, causal discovery, explainability analysis, and intervention design. Use these tools when users request specific analyses.
 """
     
-    def _initialize_tool_handlers(self) -> Dict[str, Callable]:
+    def _initialize_tool_handlers(self) -> Dict[str, Any]:
         """Initialize tool handlers for agent functions."""
         return {
             "data_analysis": DataAnalysisTool(),
@@ -341,15 +341,24 @@ Data Analysis Results:
             return self._generate_mock_response(messages[-1]["content"])
         
         try:
+            # Convert messages to proper format for OpenAI API
+            formatted_messages = []
+            for msg in messages:
+                formatted_messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+            
             response = await asyncio.to_thread(
                 self.client.chat.completions.create,
                 model=self.model,
-                messages=messages,
+                messages=formatted_messages,  # type: ignore
                 temperature=self.temperature,
                 max_tokens=self.max_tokens
             )
             
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            return content if content is not None else "I apologize, but I couldn't generate a response."
             
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
@@ -559,10 +568,20 @@ class AgentOrchestrator:
     
     def get_agent_status(self) -> Dict[str, Any]:
         """Get status of all agents."""
+        active_agent_name = "general"
+        if hasattr(self.active_agent, 'name'):
+            active_agent_name = self.active_agent.name
+        
+        conversation_summary = {}
+        if hasattr(self.active_agent, 'base_agent'):
+            conversation_summary = self.active_agent.base_agent.get_conversation_summary()
+        elif hasattr(self.active_agent, 'get_conversation_summary'):
+            conversation_summary = self.active_agent.get_conversation_summary()
+        
         return {
-            "active_agent": self.active_agent.name if hasattr(self.active_agent, 'name') else "general",
+            "active_agent": active_agent_name,
             "available_agents": list(self.specialized_agents.keys()) + ["general"],
-            "conversation_summary": self.active_agent.base_agent.get_conversation_summary() if hasattr(self.active_agent, 'base_agent') else self.active_agent.get_conversation_summary()
+            "conversation_summary": conversation_summary
         }
 
 

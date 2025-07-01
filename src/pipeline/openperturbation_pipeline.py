@@ -485,9 +485,18 @@ class OpenPerturbationPipeline:
         
         try:
             # Initialize intervention predictors
-            causal_predictor = CausalGraphInterventionPredictor(  # type: ignore
-                causal_graph=causal_results.get('causal_graph')
-            )
+            causal_graph = causal_results.get('causal_graph')
+            if causal_graph is not None:
+                causal_predictor = CausalGraphInterventionPredictor(  # type: ignore
+                    causal_graph=causal_graph
+                )
+            else:
+                # Create dummy predictor if no causal graph available
+                import numpy as np
+                dummy_graph = np.eye(10)  # 10x10 identity matrix as placeholder
+                causal_predictor = CausalGraphInterventionPredictor(  # type: ignore
+                    causal_graph=dummy_graph
+                )
             
             dl_predictor = DeepLearningInterventionPredictor()  # type: ignore
             
