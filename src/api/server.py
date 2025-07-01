@@ -80,10 +80,15 @@ except ImportError:
             self.status_code = status_code
             self.detail = detail
 
+    class _RouterStub:
+        """Stub for FastAPI router."""
+        def __init__(self):
+            self.lifespan_context: Any = None
+
     class _FastAPIStub:
         """Stub for FastAPI when not available."""
         def __init__(self, *args: Any, **kwargs: Any):
-            pass
+            self.router = _RouterStub()
 
         def get(self, *args: Any, **kwargs: Any) -> Callable[[Callable], Callable]:
             """GET route decorator stub."""
@@ -106,6 +111,10 @@ except ImportError:
             def decorator(func: Callable) -> Callable:
                 return func
             return decorator
+            
+        def add_event_handler(self, event: str, func: Callable) -> None:
+            """Add event handler stub."""
+            pass
 
     def _file_stub(*args: Any, **kwargs: Any) -> _UploadFileStub:
         """File parameter stub."""
@@ -153,7 +162,7 @@ except ImportError:
 
 # Import endpoints
 try:
-    from .endpoints import router
+    from .routes.analysis import router
     ENDPOINTS_AVAILABLE = True
 except ImportError:
     logging.warning("Endpoints not available")
@@ -247,7 +256,6 @@ def create_app(config: ConfigType = None) -> Optional[ASGIApp]:
             "timestamp": datetime.utcnow().isoformat()
         }
     
-    @app.on_event("startup")
     async def startup_event() -> None:
         """Startup event handler."""
         logger.info("OpenPerturbation API Server started successfully")
@@ -262,10 +270,28 @@ def create_app(config: ConfigType = None) -> Optional[ASGIApp]:
         except ImportError:
             logger.info("PyTorch not available - using CPU")
     
-    @app.on_event("shutdown")
     async def shutdown_event() -> None:
         """Shutdown event handler."""
         logger.info("Shutting down OpenPerturbation API Server...")
+    
+    # Add lifespan context manager for modern FastAPI
+    from contextlib import asynccontextmanager
+    
+    @asynccontextmanager
+    async def lifespan(app_instance):
+        # Startup
+        await startup_event()
+        yield
+        # Shutdown
+        await shutdown_event()
+    
+    # Use lifespan if FastAPI supports it
+    try:
+        app.router.lifespan_context = lifespan
+    except AttributeError:
+        # Fallback to deprecated on_event for older FastAPI versions
+        app.add_event_handler("startup", startup_event)
+        app.add_event_handler("shutdown", shutdown_event)
     
     # Analysis endpoints
     @app.post("/api/v1/analysis/start", response_model=dict)

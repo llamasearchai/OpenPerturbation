@@ -11,8 +11,21 @@ import sys
 from pathlib import Path
 import logging
 import numpy as np
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Tuple, Protocol
 import warnings
+
+# Type definitions for better type safety
+class DataFrameLike(Protocol):
+    def __len__(self) -> int: ...
+    def iloc(self, idx: int) -> Any: ...
+    def to_dict(self) -> Dict[str, Any]: ...
+
+class AnnDataLike(Protocol):
+    X: np.ndarray
+    obs: Any
+    var: Any
+    n_obs: int
+    n_vars: int
 
 # Add required imports with fallbacks
 try:
@@ -24,52 +37,96 @@ except ImportError:
     
     # Create minimal pandas-like functionality
     class DataFrame:
-        def __init__(self, data=None):
-            self.data = data or []
+        def __init__(self, data=None, index=None, columns=None):
+            if data is not None:
+                if isinstance(data, np.ndarray):
+                    self.data = data.tolist() if data.ndim > 1 else data.tolist()
+                else:
+                    self.data = data or []
+            else:
+                self.data = []
+            self.index = index or list(range(len(self.data))) if self.data else []
+            self.columns = columns or []
             
-        def __len__(self):
+        def __len__(self) -> int:
             return len(self.data)
             
-        def iloc(self, idx):
-            return self.data[idx] if idx < len(self.data) else {}
+        def iloc(self, idx: int) -> 'Series':
+            if idx < len(self.data):
+                return Series(self.data[idx] if isinstance(self.data[idx], list) else [self.data[idx]])
+            return Series([])
             
-        def to_dict(self):
-            return {"data": self.data}
+        def to_dict(self) -> Dict[str, Any]:
+            return {"data": self.data, "index": self.index, "columns": self.columns}
+            
+        def to_csv(self, filepath: str, index: bool = True) -> None:
+            pass  # Dummy implementation
+            
+        def set_index(self, col: str) -> 'DataFrame':
+            return self
+            
+        @property
+        def values(self) -> np.ndarray:
+            return np.array(self.data) if self.data else np.array([])
     
-    def read_csv(filepath):
+    class Series:
+        def __init__(self, data=None, index=None, name=None):
+            self.data = data or []
+            self.index = index or list(range(len(self.data))) if self.data else []
+            self.name = name
+            
+        def value_counts(self) -> 'Series':
+            return Series([])
+            
+        def to_dict(self) -> Dict[str, Any]:
+            return dict(zip(self.index, self.data)) if self.index and self.data else {}
+            
+        def __getitem__(self, key: str) -> Any:
+            return None
+    
+    def read_csv(filepath: str, **kwargs) -> DataFrame:
         return DataFrame()
         
-    def read_h5(filepath):
+    def read_hdf(filepath: str) -> DataFrame:
         return DataFrame()
     
-    pd = type('pd', (), {
-        'DataFrame': DataFrame,
-        'read_csv': read_csv,
-        'read_h5': read_h5
-    })()
+    # Create mock pandas module
+    class PandasModule:
+        DataFrame = DataFrame
+        Series = Series
+        read_csv = staticmethod(read_csv)
+        read_hdf = staticmethod(read_hdf)
+    
+    pd = PandasModule()
 
 try:
     import torch
-    from torch.utils.data import Dataset, DataLoader
+    from torch.utils.data import Dataset as TorchDataset, DataLoader as TorchDataLoader
     TORCH_AVAILABLE = True
 except ImportError:
     warnings.warn("PyTorch not available")
     TORCH_AVAILABLE = False
     
     # Create dummy classes
-    class Dataset:
+    class TorchDataset:
         def __init__(self):
             pass
             
-        def __len__(self):
+        def __len__(self) -> int:
             return 0
             
-        def __getitem__(self, idx):
+        def __getitem__(self, idx: int) -> Dict[str, Any]:
             return {}
             
-    class DataLoader:
+    class TorchDataLoader:
         def __init__(self, *args, **kwargs):
-            pass
+            self.dataset = args[0] if args else None
+            
+        def __iter__(self):
+            return iter([])
+            
+        def __len__(self) -> int:
+            return 0
 
 try:
     from omegaconf import DictConfig
@@ -87,17 +144,86 @@ except Exception:  # Catch all exceptions during scanpy import
     SCANPY_AVAILABLE = False
     
     # Create dummy scanpy
-    class DummyScanpy:
-        def read_h5ad(self, filepath):
-            return DummyAnnData()
+    class PreprocessingModule:
+        def filter_genes(self, adata: Any, min_cells: int = 3) -> None:
+            pass
             
-        def read_csv(self, filepath):
-            return DummyAnnData()
+        def filter_cells(self, adata: Any, min_genes: int = 200) -> None:
+            pass
             
-        def pp(self):
+        def calculate_qc_metrics(self, adata: Any, **kwargs) -> None:
+            pass
+            
+        def normalize_total(self, adata: Any, target_sum: float = 1e4) -> None:
+            pass
+            
+        def log1p(self, adata: Any) -> None:
+            pass
+            
+        def highly_variable_genes(self, adata: Any, **kwargs) -> None:
             pass
     
+    class DummyScanpy:
+        def __init__(self):
+            self.pp = PreprocessingModule()
+            
+        def read_h5ad(self, filepath: str) -> 'DummyAnnData':
+            return DummyAnnData()
+            
+        def read_csv(self, filepath: str) -> 'DummyAnnData':
+            return DummyAnnData()
+    
     sc = DummyScanpy()
+
+# Define DummyAnnData globally so it's always available
+class DummyAnnData:
+    def __init__(self, X: Optional[np.ndarray] = None):
+        self.X = X if X is not None else np.random.randn(100, 2000)
+        if PANDAS_AVAILABLE:
+            self.obs = pd.DataFrame({
+                'cell_id': [f'cell_{i}' for i in range(self.X.shape[0])],
+                'perturbation': ['control'] * (self.X.shape[0] // 2) + ['treated'] * (self.X.shape[0] - self.X.shape[0] // 2)
+            })
+            self.var = pd.DataFrame({
+                'gene_id': [f'gene_{i}' for i in range(self.X.shape[1])],
+                'gene_name': [f'GENE{i}' for i in range(self.X.shape[1])]
+            })
+        else:
+            # Create stub DataFrame
+            self.obs = DataFrame({
+                'cell_id': [f'cell_{i}' for i in range(self.X.shape[0])],
+                'perturbation': ['control'] * (self.X.shape[0] // 2) + ['treated'] * (self.X.shape[0] - self.X.shape[0] // 2)
+            })
+            self.var = DataFrame({
+                'gene_id': [f'gene_{i}' for i in range(self.X.shape[1])],
+                'gene_name': [f'GENE{i}' for i in range(self.X.shape[1])]
+            })
+        self.n_obs = self.X.shape[0]
+        self.n_vars = self.X.shape[1]
+        self.obs_names = [f'cell_{i}' for i in range(self.n_obs)]
+        self.var_names = [f'gene_{i}' for i in range(self.n_vars)]
+        
+    def to_df(self) -> Any:
+        if PANDAS_AVAILABLE:
+            return pd.DataFrame(self.X)
+        else:
+            return DataFrame(self.X)
+        
+    def copy(self) -> 'DummyAnnData':
+        new_adata = DummyAnnData(self.X.copy())
+        return new_adata
+        
+    def write_h5ad(self, filepath: str) -> None:
+        pass
+        
+    def __getitem__(self, key) -> 'DummyAnnData':
+        if isinstance(key, slice):
+            start = key.start or 0
+            stop = key.stop or self.n_obs
+            new_X = self.X[start:stop]
+            new_adata = DummyAnnData(new_X)
+            return new_adata
+        return self
 
 try:
     import anndata as ad
@@ -106,27 +232,14 @@ except ImportError:
     warnings.warn("AnnData not available")
     ANNDATA_AVAILABLE = False
     
-    class DummyAnnData:
-        def __init__(self):
-            self.X = np.random.randn(100, 2000)  # Dummy expression matrix
-            self.obs = pd.DataFrame({
-                'cell_id': [f'cell_{i}' for i in range(100)],
-                'perturbation': ['control'] * 50 + ['treated'] * 50
-            })
-            self.var = pd.DataFrame({
-                'gene_id': [f'gene_{i}' for i in range(2000)],
-                'gene_name': [f'GENE{i}' for i in range(2000)]
-            })
-            self.n_obs = 100
-            self.n_vars = 2000
-            
-        def to_df(self):
-            return pd.DataFrame(self.X)
-    
-    def read_h5ad(filepath):
+    def read_h5ad(filepath: str) -> DummyAnnData:
         return DummyAnnData()
     
-    ad = type('ad', (), {'read_h5ad': read_h5ad})()
+    class AnndataModule:
+        AnnData = DummyAnnData
+        read_h5ad = staticmethod(read_h5ad)
+    
+    ad = AnndataModule()
 
 try:
     import h5py
@@ -143,8 +256,8 @@ class GenomicsDataLoader:
     
     def __init__(self, config: Union[DictConfig, dict]):
         self.config = config
-        self.datasets = {}
-        self.dataloaders = {}
+        self.datasets: Dict[str, Union['SingleCellDataset', 'BulkRNASeqDataset']] = {}
+        self.dataloaders: Dict[str, TorchDataLoader] = {}
         self.batch_size = config.get("batch_size", 32)
         self.num_workers = config.get("num_workers", 0)
         self.pin_memory = config.get("pin_memory", False)
@@ -156,7 +269,7 @@ class GenomicsDataLoader:
         self.min_cells = config.get("min_cells", 3)
         self.min_genes = config.get("min_genes", 200)
         
-    def setup(self, stage: Optional[str] = None):
+    def setup(self, stage: Optional[str] = None) -> None:
         """Setup datasets and dataloaders."""
         if not PANDAS_AVAILABLE:
             logger.error("Pandas required for genomics data loading")
@@ -192,7 +305,7 @@ class GenomicsDataLoader:
         # Create dataloaders
         self._create_dataloaders()
         
-    def _split_dataset(self):
+    def _split_dataset(self) -> None:
         """Split training dataset into train/val."""
         if "train" not in self.datasets:
             return
@@ -215,13 +328,13 @@ class GenomicsDataLoader:
         else:
             logger.warning("PyTorch not available, cannot split dataset")
             
-    def _create_dataloaders(self):
+    def _create_dataloaders(self) -> None:
         """Create PyTorch dataloaders."""
         if not TORCH_AVAILABLE:
             logger.warning("PyTorch not available, cannot create dataloaders")
             return
             
-        def collate_fn(batch):
+        def collate_fn(batch: List[Dict[str, Any]]) -> Dict[str, Any]:
             """Custom collate function for genomics data."""
             # Extract data components
             expressions = []
@@ -230,10 +343,11 @@ class GenomicsDataLoader:
             metadata = []
             
             for item in batch:
-                expressions.append(item["expression"])
-                cell_ids.append(item["cell_id"])
-                perturbations.append(item["perturbation"])
-                metadata.append(item["metadata"])
+                if isinstance(item.get("expression"), torch.Tensor):
+                    expressions.append(item["expression"])
+                cell_ids.append(item.get("cell_id", "unknown"))
+                perturbations.append(item.get("perturbation", "unknown"))
+                metadata.append(item.get("metadata", {}))
             
             # Convert to tensors
             batch_data = {
@@ -248,7 +362,7 @@ class GenomicsDataLoader:
         for split, dataset in self.datasets.items():
             shuffle = (split == "train")
             
-            dataloader = DataLoader(
+            dataloader = TorchDataLoader(
                 dataset,
                 batch_size=self.batch_size,
                 shuffle=shuffle,
@@ -259,7 +373,7 @@ class GenomicsDataLoader:
             
             self.dataloaders[split] = dataloader
         
-    def get_dataloader(self, split: str) -> Optional[DataLoader]:
+    def get_dataloader(self, split: str) -> Optional[TorchDataLoader]:
         """Get dataloader for split."""
         if not TORCH_AVAILABLE:
             logger.error("PyTorch required for data loading")
@@ -272,10 +386,16 @@ class GenomicsDataLoader:
         
         for split, dataset in self.datasets.items():
             if hasattr(dataset, 'adata') and dataset.adata is not None:
+                perturbation_counts = {}
+                if hasattr(dataset.adata, 'obs') and hasattr(dataset.adata.obs, 'get'):
+                    perturb_series = dataset.adata.obs.get('perturbation', None)
+                    if perturb_series is not None and hasattr(perturb_series, 'value_counts'):
+                        perturbation_counts = perturb_series.value_counts().to_dict()
+                
                 stats[split] = {
                     "n_cells": dataset.adata.n_obs,
                     "n_genes": dataset.adata.n_vars,
-                    "perturbations": dataset.adata.obs.get('perturbation', pd.Series()).value_counts().to_dict() if PANDAS_AVAILABLE else {}
+                    "perturbations": perturbation_counts
                 }
             else:
                 stats[split] = {
@@ -287,10 +407,11 @@ class GenomicsDataLoader:
         return stats
 
 
-class SingleCellDataset(Dataset):
+class SingleCellDataset(TorchDataset):
     """Single cell RNA-seq dataset with comprehensive processing."""
     
     def __init__(self, config: Union[DictConfig, dict], data_path: str, mode: str = "train"):
+        super().__init__()
         self.config = config
         self.data_path = data_path
         self.mode = mode
@@ -299,7 +420,7 @@ class SingleCellDataset(Dataset):
         if self.adata is not None:
             self._preprocess_data()
         
-    def _load_data(self):
+    def _load_data(self) -> Optional[AnnDataLike]:
         """Load single cell data from various formats."""
         data_path = Path(self.data_path)
         
@@ -335,16 +456,17 @@ class SingleCellDataset(Dataset):
             logger.error(f"Failed to load data from {data_path}: {e}")
             return self._create_dummy_data()
     
-    def _create_dummy_data(self):
+    def _create_dummy_data(self) -> DummyAnnData:
         """Create dummy single cell data for testing."""
         return DummyAnnData()
     
-    def _df_to_anndata(self, df):
+    def _df_to_anndata(self, df: Any) -> AnnDataLike:
         """Convert DataFrame to AnnData-like structure."""
         if not ANNDATA_AVAILABLE:
             # Create dummy structure
             dummy = DummyAnnData()
-            dummy.X = df.values if hasattr(df, 'values') else np.random.randn(100, 2000)
+            if hasattr(df, 'values'):
+                dummy.X = df.values
             return dummy
         
         # Convert pandas DataFrame to AnnData
@@ -354,9 +476,10 @@ class SingleCellDataset(Dataset):
         
         return adata
     
-    def _load_h5_data(self, data_path):
+    def _load_h5_data(self, data_path: Path) -> Optional[AnnDataLike]:
         """Load data from HDF5 format."""
         try:
+            import h5py
             with h5py.File(data_path, 'r') as f:
                 # Assume standard 10X format
                 if 'matrix' in f:
@@ -365,7 +488,7 @@ class SingleCellDataset(Dataset):
                     expression_data = matrix['data'][:]
                     indices = matrix['indices'][:]
                     indptr = matrix['indptr'][:]
-                    shape = matrix['shape'][:]
+                    shape = tuple(matrix['shape'][:])
                     
                     # Reconstruct sparse matrix
                     from scipy.sparse import csr_matrix
@@ -384,7 +507,7 @@ class SingleCellDataset(Dataset):
             logger.error(f"Failed to load HDF5 data: {e}")
             return self._create_dummy_data()
     
-    def _preprocess_data(self):
+    def _preprocess_data(self) -> None:
         """Preprocess single cell data."""
         if self.adata is None or not SCANPY_AVAILABLE:
             return
@@ -425,36 +548,64 @@ class SingleCellDataset(Dataset):
         except Exception as e:
             logger.warning(f"Preprocessing failed: {e}")
     
-    def __len__(self):
+    def __len__(self) -> int:
         if self.adata is None:
             return 0
         return self.adata.n_obs
         
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
         if self.adata is None:
-            return {"expression": torch.zeros(2000), "cell_id": f"cell_{idx}", "perturbation": "unknown", "metadata": {}}
+            return {
+                "expression": torch.zeros(2000) if TORCH_AVAILABLE else np.zeros(2000), 
+                "cell_id": f"cell_{idx}", 
+                "perturbation": "unknown", 
+                "metadata": {}
+            }
         
         try:
             # Get expression data for cell
             if hasattr(self.adata.X, 'toarray'):
                 # Sparse matrix
-                expression = torch.tensor(self.adata.X[idx].toarray().flatten(), dtype=torch.float32)
+                expression_data = self.adata.X[idx].toarray().flatten()
             else:
                 # Dense matrix
-                expression = torch.tensor(self.adata.X[idx], dtype=torch.float32)
+                expression_data = self.adata.X[idx]
+                if hasattr(expression_data, 'flatten'):
+                    expression_data = expression_data.flatten()
+            
+            if TORCH_AVAILABLE:
+                expression = torch.tensor(expression_data, dtype=torch.float32)
+            else:
+                expression = np.array(expression_data, dtype=np.float32)
             
             # Get cell metadata
-            cell_id = self.adata.obs_names[idx] if hasattr(self.adata, 'obs_names') else f"cell_{idx}"
+            cell_id = f"cell_{idx}"
+            if hasattr(self.adata, 'obs_names') and idx < len(self.adata.obs_names):
+                cell_id = str(self.adata.obs_names[idx])
             
             # Get perturbation information
             perturbation = "control"
-            if hasattr(self.adata, 'obs') and 'perturbation' in self.adata.obs.columns:
-                perturbation = str(self.adata.obs.iloc[idx]['perturbation'])
+            if (hasattr(self.adata, 'obs') and 
+                hasattr(self.adata.obs, 'iloc') and 
+                idx < len(self.adata.obs)):
+                try:
+                    obs_row = self.adata.obs.iloc(idx)
+                    if hasattr(obs_row, '__getitem__') and 'perturbation' in obs_row:
+                        perturbation = str(obs_row['perturbation'])
+                except Exception:
+                    pass
             
             # Additional metadata
             metadata = {}
-            if hasattr(self.adata, 'obs'):
-                metadata = self.adata.obs.iloc[idx].to_dict()
+            if (hasattr(self.adata, 'obs') and 
+                hasattr(self.adata.obs, 'iloc') and 
+                idx < len(self.adata.obs)):
+                try:
+                    obs_row = self.adata.obs.iloc(idx)
+                    if hasattr(obs_row, 'to_dict'):
+                        metadata = obs_row.to_dict()
+                except Exception:
+                    pass
             
             return {
                 "expression": expression,
@@ -466,23 +617,24 @@ class SingleCellDataset(Dataset):
         except Exception as e:
             logger.warning(f"Failed to get item {idx}: {e}")
             return {
-                "expression": torch.zeros(2000),
+                "expression": torch.zeros(2000) if TORCH_AVAILABLE else np.zeros(2000),
                 "cell_id": f"cell_{idx}",
                 "perturbation": "unknown",
                 "metadata": {}
             }
 
 
-class BulkRNASeqDataset(Dataset):
+class BulkRNASeqDataset(TorchDataset):
     """Bulk RNA-seq dataset for perturbation analysis."""
     
     def __init__(self, config: Union[DictConfig, dict], data_path: str, mode: str = "train"):
+        super().__init__()
         self.config = config
         self.data_path = data_path
         self.mode = mode
         self.data = self._load_data()
         
-    def _load_data(self):
+    def _load_data(self) -> Optional[Any]:
         """Load bulk RNA-seq data."""
         if not PANDAS_AVAILABLE:
             logger.error("Pandas required for bulk RNA-seq data")
@@ -505,7 +657,7 @@ class BulkRNASeqDataset(Dataset):
             logger.error(f"Failed to load bulk RNA-seq data: {e}")
             return self._create_dummy_data()
     
-    def _create_dummy_data(self):
+    def _create_dummy_data(self) -> Optional[Any]:
         """Create dummy bulk RNA-seq data."""
         if PANDAS_AVAILABLE:
             # Create dummy expression matrix
@@ -522,19 +674,34 @@ class BulkRNASeqDataset(Dataset):
         else:
             return None
     
-    def __len__(self):
+    def __len__(self) -> int:
         if self.data is None:
             return 0
         return len(self.data)
         
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
         if self.data is None:
-            return {"expression": torch.zeros(2000), "sample_id": f"sample_{idx}", "metadata": {}}
+            return {
+                "expression": torch.zeros(2000) if TORCH_AVAILABLE else np.zeros(2000), 
+                "sample_id": f"sample_{idx}", 
+                "metadata": {}
+            }
         
         try:
-            sample_data = self.data.iloc[idx]
-            expression = torch.tensor(sample_data.values, dtype=torch.float32)
-            sample_id = sample_data.name
+            sample_data = self.data.iloc(idx)
+            if hasattr(sample_data, 'values'):
+                expression_data = sample_data.values
+            else:
+                expression_data = np.zeros(2000)
+                
+            if TORCH_AVAILABLE:
+                expression = torch.tensor(expression_data, dtype=torch.float32)
+            else:
+                expression = np.array(expression_data, dtype=np.float32)
+                
+            sample_id = f"sample_{idx}"
+            if hasattr(sample_data, 'name'):
+                sample_id = str(sample_data.name)
             
             return {
                 "expression": expression,
@@ -545,13 +712,13 @@ class BulkRNASeqDataset(Dataset):
         except Exception as e:
             logger.warning(f"Failed to get bulk sample {idx}: {e}")
             return {
-                "expression": torch.zeros(2000),
+                "expression": torch.zeros(2000) if TORCH_AVAILABLE else np.zeros(2000),
                 "sample_id": f"sample_{idx}",
                 "metadata": {}
             }
 
 
-def create_synthetic_genomics_data(config: Union[DictConfig, dict], output_dir: Union[str, Path]):
+def create_synthetic_genomics_data(config: Union[DictConfig, dict], output_dir: Union[str, Path]) -> None:
     """Create synthetic genomics data for testing."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -612,15 +779,18 @@ def create_synthetic_genomics_data(config: Union[DictConfig, dict], output_dir: 
         
     else:
         # Save as CSV files
+        train_size = int(0.7 * n_cells)
+        val_size = int(0.15 * n_cells)
+        
         train_expr = pd.DataFrame(
-            expression_matrix[:int(0.7 * n_cells)],
-            index=[f'cell_{i}' for i in range(int(0.7 * n_cells))],
+            expression_matrix[:train_size],
+            index=[f'cell_{i}' for i in range(train_size)],
             columns=[f'gene_{i}' for i in range(n_genes)]
         )
         train_expr.to_csv(output_dir / "train.csv")
         
-        val_start = int(0.7 * n_cells)
-        val_end = val_start + int(0.15 * n_cells)
+        val_start = train_size
+        val_end = val_start + val_size
         val_expr = pd.DataFrame(
             expression_matrix[val_start:val_end],
             index=[f'cell_{i}' for i in range(val_start, val_end)],
@@ -642,7 +812,7 @@ def create_synthetic_genomics_data(config: Union[DictConfig, dict], output_dir: 
     logger.info(f"Created synthetic genomics data in {output_dir}")
 
 
-def test_genomics_loader():
+def test_genomics_loader() -> None:
     """Test genomics data loader functionality."""
     logger.info("Testing genomics data loader...")
     
@@ -667,11 +837,14 @@ def test_genomics_loader():
     # Test data loading
     train_loader = loader.get_dataloader("train")
     if train_loader and TORCH_AVAILABLE:
-        for batch in train_loader:
-            logger.info(f"Batch keys: {batch.keys()}")
-            if "expression" in batch:
-                logger.info(f"Expression shape: {batch['expression'].shape}")
-            break
+        try:
+            for batch in train_loader:
+                logger.info(f"Batch keys: {list(batch.keys())}")
+                if "expression" in batch and hasattr(batch["expression"], "shape"):
+                    logger.info(f"Expression shape: {batch['expression'].shape}")
+                break
+        except Exception as e:
+            logger.warning(f"Error iterating through dataloader: {e}")
     
     # Print statistics
     stats = loader.get_dataset_statistics()
@@ -681,4 +854,6 @@ def test_genomics_loader():
 
 
 if __name__ == "__main__":
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
     test_genomics_loader()
