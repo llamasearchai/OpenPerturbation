@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-01-03
+
+### Fixed
+- **Critical System Integration Issues**
+  - Fixed incorrect relative import in OpenAI agent module (agent_tools -> .agent_tools)
+  - Resolved module reference errors (src.training.metrics -> src.training.training_metrics)
+  - Updated agent class imports in __init__.py to match actual implementations
+  - Removed broken models_broken.py and consolidated API models
+
+- **Method Name Corrections**
+  - Fixed method name error: design_optimal_interventions -> design_interventions
+  - Ensured consistent API method naming across intervention design components
+  - Updated all references to use correct method signatures
+
+- **Type Safety and Compatibility**
+  - Added proper type ignore comments for PyTorch Lightning compatibility
+  - Resolved class inheritance conflicts between stub classes and real imports
+  - Fixed attribute access issues on Lightning modules with safe getattr usage
+  - Enhanced optional dependency imports with proper fallback implementations
+
+- **File Organization and Structure**
+  - Renamed training modules for clarity: losses.py -> training_losses.py
+  - Renamed metrics module: metrics.py -> training_metrics.py
+  - Updated all import references throughout codebase
+  - Cleaned up deprecated and broken files
+
+### Changed
+- **System Verification**
+  - All core components now verified to import and work together successfully
+  - Complete integration testing of API models, pipeline, agents, and FastAPI app
+  - Enhanced production readiness with comprehensive error handling
+
+### Technical Details
+- **Tested Components**: API models, Pipeline system, OpenAI Agents SDK, FastAPI application
+- **Verification Status**: All core systems functional and production-ready
+- **Impact**: Resolves all blocking issues preventing system startup
+- **Author**: Nik Jois <nikjois@llamasearch.ai>
+
 ## [1.0.0] - 2025-01-03
 
 ### Added
